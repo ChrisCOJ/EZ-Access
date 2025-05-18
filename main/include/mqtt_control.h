@@ -1,0 +1,170 @@
+#ifndef mqtt_control_h
+#define mqtt_control_h
+
+/* 
+ ?MQTT Documentation:
+ https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/errata01/os/mqtt-v3.1.1-errata01-os-complete.html#_Toc385349205 
+*/
+
+#include <stdio.h>
+#include <stdint.h>
+
+
+#define HEADER_SIZE             2
+
+/* First byte in the fixed header represents the type of message */
+#define CONNECT_TYPE            0x10
+#define CONNACK_TYPE            0x20
+#define PUBLISH_TYPE            0x30
+#define PUBACK_TYPE             0x40
+#define PUBREC_TYPE             0x50
+#define PUBREL_TYPE             0x60
+#define PUBCOMP_TYPE            0x70
+#define SUBSCRIBE_TYPE          0x80
+#define SUBACK_TYPE             0x90
+#define UNSUBSCRIBE_TYPE        0xA0
+#define UNSUBACK_TYPE           0xB0
+#define PINGREQ_TYPE            0xC0
+#define PINGRESP_TYPE           0xD0
+#define DISCONNECT_TYPE         0xE0
+
+/* Publish type flags */
+#define RETAIN_FLAG             (1 << 0)
+#define QOS_AMO_FLAG            0x00            // At most once
+#define QOS_ALO_FLAG            (1 << 1)        // At least once
+#define QOS_EO_FLAG             (1 << 2)        // Exactly once
+#define DUP_FLAG                (1 << 3)
+
+/* Connect flags */
+#define CLEAN_SESSION_FLAG      (1 << 1)    
+#define WILL_FLAG               (1 << 2)
+#define WILL_QOS_AMO_FLAG       0x00            // At most once
+#define WILL_QOS_ALO_FLAG       (1 << 3)        // At least once
+#define WILL_QOS_EO_FLAG        (1 << 4)        // Exactly once
+#define WILL_RETAIN             (1 << 5)
+#define PASSWORD_FLAG           (1 << 6)
+#define USERNAME_FLAG           (1 << 7)
+
+
+/* 
+ * Union detailing the structure of an mqtt header. The 'qos', 'dup', and 'retain' flags only apply to PUBLISH type messages.
+ * From the LSB to MSB it goes:
+ - Retain flag (1 bit)
+ - QOS flag (2 bits)
+ - Duplicate flag (1 bit)
+ - Type of message (4 bits)
+*/
+typedef union {
+    uint8_t fixed_header;
+    uint32_t remaining_length;  // (optional)
+} mqtt_header;
+
+
+/* 
+ * Connect packet contains:
+ - Fixed header.
+ - Variable header that includes a protocol name length (4),
+   protocol name ('MQTT'), protocol level (4), connect flags, 
+   and 2 bytes of keep alive (MSB then LSB).
+ - Payload
+*/
+typedef struct {
+    // Fixed Header
+    mqtt_header header;
+    // Variable Header
+    struct {
+        uint16_t len;   // MSB then LSB
+        char *name;
+    } protocol_name;
+    uint8_t protocol_level; // (4)
+    uint8_t connect_flags;
+    uint16_t keep_alive;    // Maximum acceptable time in seconds between the end of one control packet and the start of another
+    // Payload (Messages, if present, MUST appear in the order below from top to bottom!)
+    struct {
+        uint8_t *client_id;
+        uint8_t *will_topic;
+        uint8_t *will_message;
+        uint8_t *username;
+        uint8_t *password;
+    } payload;
+} mqtt_connect;
+
+
+typedef struct {
+    mqtt_header header;
+    uint8_t session_present_flag;   // 1 = session present flag set, 0 = session present flag unset
+    uint8_t rc;
+} mqtt_connack;
+
+
+typedef struct {
+    mqtt_header header;
+    uint16_t pkt_id;
+    uint16_t tuples_len;
+    struct {
+        uint16_t topic_len;
+        uint8_t *topic;
+        unsigned qos;
+    } *tuples;
+} mqtt_subscribe;
+
+
+typedef struct {
+    mqtt_header header;
+    uint16_t pkt_id;
+    uint16_t tuples_len;
+    struct {
+        uint16_t topic_len;
+        uint8_t *topic;
+    } *tuples;
+} mqtt_unsubscribe;
+
+
+typedef struct {
+    mqtt_header header;
+    uint16_t  pkt_id;
+    uint16_t rcslen;
+    uint8_t *rcs;
+} mqtt_suback;
+
+
+typedef struct {
+    mqtt_header header;
+    uint16_t pkt_id;
+    uint16_t topiclen;
+    uint8_t *topic;
+    uint16_t payloadlen;
+    uint8_t *payload;
+} mqtt_publish;
+
+
+typedef struct {
+    mqtt_header header;
+    uint16_t pkt_id;
+} mqtt_ack;
+
+
+/* The rest of message types have the same structure as mqtt_ack or mqtt_header */
+typedef mqtt_ack mqtt_puback;
+typedef mqtt_ack mqtt_pubrec;
+typedef mqtt_ack mqtt_pubrel;
+typedef mqtt_ack mqtt_pubcomp;
+typedef mqtt_ack mqtt_unsuback;
+typedef mqtt_header mqtt_pingreq;
+typedef mqtt_header mqtt_pingresp;
+typedef mqtt_header mqtt_disconnect;
+
+
+typedef union {
+    mqtt_ack ack;
+    mqtt_header header;
+    mqtt_connect connect;
+    mqtt_connack connack;
+    mqtt_publish publish;
+    mqtt_subscribe subscribe;
+    mqtt_suback suback;
+    mqtt_unsubscribe unsubscribe;
+} mqtt_packet;
+
+
+#endif
