@@ -25,7 +25,17 @@ enum packet_type {
 
 
 int unpack(mqtt_packet *packet, char *buffer, size_t buffer_size);
+int encode_remaining_length(const uint8_t *buf, size_t remaining_length);
+uint32_t decode_remaining_length(uint8_t *buf, uint8_t offset);
 
+void mqtt_send(int client, mqtt_packet *packet_type);
+
+void free_connect(mqtt_connect *connect_packet);
+void free_publish(mqtt_connect *publish_packet);
+void free_subscribe(mqtt_connect *subscribe_packet);
+void free_unsubscribe(mqtt_connect *unsubscribe_packet);
+void free_puback(mqtt_connect *puback_packet);
+void free_disconnect(mqtt_connect *disconnect_packet);
 
 
 #endif

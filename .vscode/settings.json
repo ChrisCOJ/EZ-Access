@@ -4,5 +4,6 @@
     "mqtt_control.h": "c",
     "mqtt_util.h": "c",
     "mqtt_com.h": "c"
-  }
+  },
+  "makefile.configureOnOpen": false
 }

@@ -56,7 +56,7 @@
 */
 typedef union {
     uint8_t fixed_header;
-    uint32_t remaining_length;  // (optional)
+    uint32_t remaining_length;
 } mqtt_header;
 
 
@@ -69,8 +69,6 @@ typedef union {
  - Payload
 */
 typedef struct {
-    // Fixed Header
-    mqtt_header header;
     // Variable Header
     struct {
         uint16_t len;   // MSB then LSB
@@ -79,26 +77,29 @@ typedef struct {
     uint8_t protocol_level; // (4)
     uint8_t connect_flags;
     uint16_t keep_alive;    // Maximum acceptable time in seconds between the end of one control packet and the start of another
-    // Payload (Messages, if present, MUST appear in the order below from top to bottom!)
+    // Payload (Messages MUST appear in the order below from top to bottom!)
     struct {
+        uint16_t client_id_len;
         uint8_t *client_id;
+        uint16_t will_topic_len;
         uint8_t *will_topic;
+        uint16_t will_message_len;
         uint8_t *will_message;
+        uint16_t username_len;
         uint8_t *username;
+        uint16_t password_len;
         uint8_t *password;
     } payload;
 } mqtt_connect;
 
 
 typedef struct {
-    mqtt_header header;
     uint8_t session_present_flag;   // 1 = session present flag set, 0 = session present flag unset
     uint8_t rc;
 } mqtt_connack;
 
 
 typedef struct {
-    mqtt_header header;
     uint16_t pkt_id;
     uint16_t tuples_len;
     struct {
@@ -110,7 +111,6 @@ typedef struct {
 
 
 typedef struct {
-    mqtt_header header;
     uint16_t pkt_id;
     uint16_t tuples_len;
     struct {
@@ -121,7 +121,6 @@ typedef struct {
 
 
 typedef struct {
-    mqtt_header header;
     uint16_t  pkt_id;
     uint16_t rcslen;
     uint8_t *rcs;
@@ -129,7 +128,6 @@ typedef struct {
 
 
 typedef struct {
-    mqtt_header header;
     uint16_t pkt_id;
     uint16_t topiclen;
     uint8_t *topic;
@@ -139,7 +137,6 @@ typedef struct {
 
 
 typedef struct {
-    mqtt_header header;
     uint16_t pkt_id;
 } mqtt_ack;
 
@@ -155,15 +152,17 @@ typedef mqtt_header mqtt_pingresp;
 typedef mqtt_header mqtt_disconnect;
 
 
-typedef union {
-    mqtt_ack ack;
+typedef struct {
     mqtt_header header;
-    mqtt_connect connect;
-    mqtt_connack connack;
-    mqtt_publish publish;
-    mqtt_subscribe subscribe;
-    mqtt_suback suback;
-    mqtt_unsubscribe unsubscribe;
+    union {
+        mqtt_connect connect;
+        mqtt_connack connack;
+        mqtt_publish publish;
+        mqtt_subscribe subscribe;
+        mqtt_suback suback;
+        mqtt_unsubscribe unsubscribe;
+        mqtt_ack ack;
+    } type;
 } mqtt_packet;
 
 
