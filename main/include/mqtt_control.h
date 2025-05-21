@@ -30,6 +30,7 @@
 
 /* Publish type flags */
 #define RETAIN_FLAG             (1 << 0)
+#define QOS_FLAG_MASK           0b00000110
 #define QOS_AMO_FLAG            0x00            // At most once
 #define QOS_ALO_FLAG            (1 << 1)        // At least once
 #define QOS_EO_FLAG             (1 << 2)        // Exactly once
@@ -38,9 +39,10 @@
 /* Connect flags */
 #define CLEAN_SESSION_FLAG      (1 << 1)    
 #define WILL_FLAG               (1 << 2)
-#define WILL_QOS_AMO_FLAG       0x00            // At most once
-#define WILL_QOS_ALO_FLAG       (1 << 3)        // At least once
-#define WILL_QOS_EO_FLAG        (1 << 4)        // Exactly once
+#define WILL_QOS_FLAG_MASK      0b00011000
+#define WILL_QOS_AMO            0x00
+#define WILL_QOS_ALO            (1 << 3)
+#define WILL_QOS_EO             (1 << 4)
 #define WILL_RETAIN             (1 << 5)
 #define PASSWORD_FLAG           (1 << 6)
 #define USERNAME_FLAG           (1 << 7)
@@ -122,16 +124,16 @@ typedef struct {
 
 typedef struct {
     uint16_t  pkt_id;
-    uint16_t rcslen;
+    uint16_t rcs_len;
     uint8_t *rcs;
 } mqtt_suback;
 
 
 typedef struct {
     uint16_t pkt_id;
-    uint16_t topiclen;
+    uint16_t topic_len;
     uint8_t *topic;
-    uint16_t payloadlen;
+    uint32_t payload_len;
     uint8_t *payload;
 } mqtt_publish;
 

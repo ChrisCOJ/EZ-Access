@@ -23,8 +23,11 @@ enum packet_type {
 // Error numbers
 #define GENERIC_ERR     -1
 
-
+uint8_t unpack_uint8(const uint8_t **buf);
+uint16_t unpack_uint16(const uint8_t **buf);
+void unpack_str(const uint8_t **buf, char **str, uint16_t len);
 int unpack(mqtt_packet *packet, char *buffer, size_t buffer_size);
+
 int encode_remaining_length(const uint8_t *buf, size_t remaining_length);
 uint32_t decode_remaining_length(uint8_t *buf, uint8_t offset);
 
