@@ -54,12 +54,12 @@ void* process_client_messages(void* client_socket) {
 
     while (connection_alive) {
         mqtt_packet packet;
-        char buffer[1024] = {0};
+        uint8_t buffer[1024] = {0};
         int read_size = read(*(int *)client_socket, buffer, sizeof(buffer));  // The size in bytes of the message read from the client socket
 
         if (read_size > 0) {
             // Parse the message received from the client.
-            int packet_type = unpack(&packet, ntohl(buffer), sizeof(buffer));  // Reconstruct bytestream as mqtt_packet and store in packet
+            int packet_type = unpack(&packet, &buffer, read_size);  // Reconstruct bytestream as mqtt_packet and store in packet
 
             if (msg_number == 0 && packet_type != MQTT_CONNECT)  {
                 perror("Unexpected MQTT packet type. First packet MUST be MQTT_CONNECT, dropping client...");

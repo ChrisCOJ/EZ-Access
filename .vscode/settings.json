@@ -3,7 +3,8 @@
     "*.py": "python",
     "mqtt_control.h": "c",
     "mqtt_util.h": "c",
-    "mqtt_com.h": "c"
+    "mqtt_com.h": "c",
+    "cdefs.h": "c"
   },
   "makefile.configureOnOpen": false
 }

@@ -21,15 +21,18 @@ enum packet_type {
     MQTT_DISCONNECT  = 14,
 };
 // Error numbers
-#define GENERIC_ERR     -1
+#define GENERIC_ERR                 -1
+#define INCORRECT_FLAGS             -2
+#define MALFORMED_PACKET            -3
 
-uint8_t unpack_uint8(const uint8_t **buf);
-uint16_t unpack_uint16(const uint8_t **buf);
-void unpack_str(const uint8_t **buf, char **str, uint16_t len);
-int unpack(mqtt_packet *packet, char *buffer, size_t buffer_size);
 
-int encode_remaining_length(const uint8_t *buf, size_t remaining_length);
-uint32_t decode_remaining_length(uint8_t *buf, uint8_t offset);
+uint8_t unpack_uint8(uint8_t **buf);
+uint16_t unpack_uint16(uint8_t **buf);
+void unpack_str(uint8_t **buf, char **str, uint16_t len);
+int unpack(mqtt_packet *packet, uint8_t **buf, size_t buffer_size);
+
+int encode_remaining_length(uint8_t **buf, size_t remaining_length);
+uint32_t decode_remaining_length(uint8_t **buf);
 
 void mqtt_send(int client, mqtt_packet *packet_type);
 

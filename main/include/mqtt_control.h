@@ -28,13 +28,16 @@
 #define PINGRESP_TYPE           0xD0
 #define DISCONNECT_TYPE         0xE0
 
-/* Publish type flags */
+/* Publish flags */
 #define RETAIN_FLAG             (1 << 0)
 #define QOS_FLAG_MASK           0b00000110
 #define QOS_AMO_FLAG            0x00            // At most once
 #define QOS_ALO_FLAG            (1 << 1)        // At least once
 #define QOS_EO_FLAG             (1 << 2)        // Exactly once
 #define DUP_FLAG                (1 << 3)
+
+/* Subscribe flags */
+#define SUBSCRIBE_FLAGS         0b00000010
 
 /* Connect flags */
 #define CLEAN_SESSION_FLAG      (1 << 1)    
@@ -82,15 +85,15 @@ typedef struct {
     // Payload (Messages MUST appear in the order below from top to bottom!)
     struct {
         uint16_t client_id_len;
-        uint8_t *client_id;
+        char *client_id;
         uint16_t will_topic_len;
-        uint8_t *will_topic;
+        char *will_topic;
         uint16_t will_message_len;
-        uint8_t *will_message;
+        char *will_message;
         uint16_t username_len;
-        uint8_t *username;
+        char *username;
         uint16_t password_len;
-        uint8_t *password;
+        char *password;
     } payload;
 } mqtt_connect;
 
@@ -106,7 +109,7 @@ typedef struct {
     uint16_t tuples_len;
     struct {
         uint16_t topic_len;
-        uint8_t *topic;
+        char *topic;
         unsigned qos;
     } *tuples;
 } mqtt_subscribe;
@@ -117,7 +120,7 @@ typedef struct {
     uint16_t tuples_len;
     struct {
         uint16_t topic_len;
-        uint8_t *topic;
+        char *topic;
     } *tuples;
 } mqtt_unsubscribe;
 
@@ -132,9 +135,9 @@ typedef struct {
 typedef struct {
     uint16_t pkt_id;
     uint16_t topic_len;
-    uint8_t *topic;
+    char *topic;
     uint32_t payload_len;
-    uint8_t *payload;
+    char *payload;
 } mqtt_publish;
 
 
