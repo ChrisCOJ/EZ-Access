@@ -28,6 +28,10 @@
 #define PINGRESP_TYPE           0xD0
 #define DISCONNECT_TYPE         0xE0
 
+// Fixed header masks
+#define TYPE_MASK               0xF0
+#define FLAG_MASK               0x0F
+
 /* Publish flags */
 #define RETAIN_FLAG             (1 << 0)
 #define QOS_FLAG_MASK           0b00000110
@@ -38,6 +42,8 @@
 
 /* Subscribe flags */
 #define SUBSCRIBE_FLAGS         0b00000010
+/* Disconnect flags */
+#define DISCONNECT_FLAGS        0x00
 
 /* Connect flags */
 #define CLEAN_SESSION_FLAG      (1 << 1)    
@@ -59,8 +65,11 @@
  - Duplicate flag (1 bit)
  - Type of message (4 bits)
 */
-typedef union {
-    uint8_t fixed_header;
+typedef struct {
+    struct {
+        uint8_t type;
+        uint8_t flags;
+    } fixed_header;
     uint32_t remaining_length;
 } mqtt_header;
 
@@ -152,9 +161,6 @@ typedef mqtt_ack mqtt_pubrec;
 typedef mqtt_ack mqtt_pubrel;
 typedef mqtt_ack mqtt_pubcomp;
 typedef mqtt_ack mqtt_unsuback;
-typedef mqtt_header mqtt_pingreq;
-typedef mqtt_header mqtt_pingresp;
-typedef mqtt_header mqtt_disconnect;
 
 
 typedef struct {
@@ -163,6 +169,7 @@ typedef struct {
         mqtt_connect connect;
         mqtt_connack connack;
         mqtt_publish publish;
+        mqtt_puback puback;
         mqtt_subscribe subscribe;
         mqtt_suback suback;
         mqtt_unsubscribe unsubscribe;
