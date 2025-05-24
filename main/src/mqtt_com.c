@@ -5,6 +5,8 @@
 
 #include "../include/mqtt_com.h"
 
+#define CHECK(x, err) do { if ((x)) return (err); } while (0)
+
 
 uint32_t decode_remaining_length(uint8_t **buf) {
     uint32_t multiplier = 1;
@@ -149,7 +151,7 @@ int unpack_publish(mqtt_packet *packet, uint8_t **buf) {
     }
     variable_header_len += packet->type.publish.topic_len;
     // Packet ID
-    if ((packet->header.fixed_header.flags & QOS_FLAG_MASK) != QOS_AMO_FLAG) {
+    if ((packet->header.fixed_header & QOS_FLAG_MASK) != QOS_AMO_FLAG) {
         packet->type.publish.pkt_id = unpack_uint16(buf);
         variable_header_len += sizeof(uint16_t);
     }
@@ -166,7 +168,7 @@ int unpack_publish(mqtt_packet *packet, uint8_t **buf) {
 
 int unpack_subscribe(mqtt_packet *packet, uint8_t **buf) {
     uint32_t remaining_len = packet->header.remaining_length;
-    if (packet->header.fixed_header.flags != SUBSCRIBE_FLAGS) {
+    if ((packet->header.fixed_header & FLAG_MASK) != SUBSCRIBE_FLAGS) {
         return INCORRECT_FLAGS;
     }
     // Packet ID
@@ -209,7 +211,7 @@ int unpack_subscribe(mqtt_packet *packet, uint8_t **buf) {
 
 int unpack_unsubscribe(mqtt_packet *packet, uint8_t **buf) {
     uint32_t remaining_len = packet->header.remaining_length;
-    if (packet->header.fixed_header.flags != SUBSCRIBE_FLAGS) {
+    if ((packet->header.fixed_header & FLAG_MASK) != SUBSCRIBE_FLAGS) {
         return INCORRECT_FLAGS;
     }
     // Packet ID
@@ -246,11 +248,9 @@ int unpack_unsubscribe(mqtt_packet *packet, uint8_t **buf) {
 int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
     // Extract the fixed header
     uint8_t packet_type = **buf & TYPE_MASK;
-    uint8_t packet_flags = **buf & FLAG_MASK;
     (*buf)++;
-    uint32_t remaining_length = decode_remaining_length(&buf);
-    packet->header.fixed_header.type = packet_type;
-    packet->header.fixed_header.flags = packet_flags;
+    uint32_t remaining_length = decode_remaining_length(buf);
+    packet->header.fixed_header = **buf;
     packet->header.remaining_length = remaining_length;
 
     switch (packet_type) {
@@ -278,11 +278,85 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
         }
 
         case DISCONNECT_TYPE: {
-            if (packet->header.fixed_header.flags != DISCONNECT_FLAGS) {
+            if ((packet->header.fixed_header & FLAG_MASK) != DISCONNECT_FLAGS) {
                 return MALFORMED_PACKET;
             }
             return MQTT_DISCONNECT;
         }
     }
     return GENERIC_ERR;
+}
+
+
+int push8(uint8_t **buf, size_t *len, uint8_t item){
+    uint8_t *tmp = realloc(*buf, *len + sizeof(uint8_t));
+    if (!tmp) return FAILED_MEM_ALLOC;
+    *buf = tmp;
+    (*buf)[*len] = item;
+    (*len) += sizeof(uint8_t);
+    return 0;
+}
+
+int push16(uint8_t **buf, size_t *len, uint16_t item) {
+    uint16_t *tmp = realloc(*buf, *len + sizeof(uint16_t));
+    if (!tmp) return FAILED_MEM_ALLOC;
+    *buf = tmp;
+    uint16_t network_item = htons(item);  // Convert to network byte order
+    memcpy(*buf + *len, &network_item, sizeof(uint16_t));
+    (*len) += sizeof(uint16_t);
+    return 0;
+}
+
+int push32(uint8_t **buf, size_t *len, uint32_t item) {
+    uint32_t *tmp = realloc(*buf, *len + sizeof(uint32_t));
+    if (!tmp) return FAILED_MEM_ALLOC;
+    *buf = tmp;
+    uint32_t network_item = htonl(item);  // Convert to network byte order
+    memcpy(*buf + *len, &network_item, sizeof(uint32_t));
+    (*len) += sizeof(uint32_t);
+    return 0;
+}
+
+int push_str(uint8_t **buf, size_t *len, char *str, uint16_t str_len) {
+    char *tmp = realloc(*buf, *len + str_len);
+    if (!tmp) return FAILED_MEM_ALLOC;
+    *buf = tmp;
+    memcpy(*buf + *len, str, str_len);
+    (*len) += str_len;
+    return 0;
+}
+
+int pack(mqtt_packet *packet, uint8_t **buf) {
+    size_t len = 0;
+    *buf = NULL;
+
+    /* Push packet specific data to buf */
+    uint8_t packet_type = packet->header.fixed_header & TYPE_MASK;
+    switch(packet_type) {
+        case(CONNECT_TYPE): {
+            /* Check if the message to be packed is a valid connect packet */
+            CHECK(!packet->type.connect.protocol_name.len, MALFORMED_PACKET);
+            CHECK(!packet->type.connect.protocol_name.name, MALFORMED_PACKET);
+            CHECK(!packet->type.connect.payload.client_id_len, MALFORMED_PACKET);
+            /* Variable Header */
+            // Protocol name len
+            CHECK(push16(buf, &len, packet->type.connect.protocol_name.len), FAILED_MEM_ALLOC);
+            // Protocol name
+            CHECK(push_str(buf, &len, packet->type.connect.protocol_name.name, 
+                packet->type.connect.protocol_name.len), FAILED_MEM_ALLOC);
+            // Protocol level
+            CHECK(push8(buf, &len, packet->type.connect.protocol_level), FAILED_MEM_ALLOC);
+            // Connect flags
+            CHECK(push8(buf, &len, packet->type.connect.connect_flags), FAILED_MEM_ALLOC);
+            // Keep alive
+            CHECK(push16(buf, &len, packet->type.connect.keep_alive), FAILED_MEM_ALLOC);
+            /* Payload */
+            CHECK(push16(buf, &len, packet->type.connect.payload.client_id_len), FAILED_MEM_ALLOC);
+            CHECK(push_str(buf, &len, packet->type.connect.payload.client_id, 
+                packet->type.connect.payload.client_id_len), FAILED_MEM_ALLOC);
+        }
+        default: {
+            return GENERIC_ERR;
+        }
+    }
 }

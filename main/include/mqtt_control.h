@@ -66,11 +66,8 @@
  - Type of message (4 bits)
 */
 typedef struct {
-    struct {
-        uint8_t type;
-        uint8_t flags;
-    } fixed_header;
     uint32_t remaining_length;
+    uint8_t fixed_header;
 } mqtt_header;
 
 
@@ -88,21 +85,21 @@ typedef struct {
         uint16_t len;   // MSB then LSB
         char *name;
     } protocol_name;
+    uint16_t keep_alive;    // Maximum acceptable time in seconds between the end of one control packet and the start of another
     uint8_t protocol_level; // (4)
     uint8_t connect_flags;
-    uint16_t keep_alive;    // Maximum acceptable time in seconds between the end of one control packet and the start of another
     // Payload (Messages MUST appear in the order below from top to bottom!)
     struct {
-        uint16_t client_id_len;
         char *client_id;
-        uint16_t will_topic_len;
         char *will_topic;
-        uint16_t will_message_len;
         char *will_message;
-        uint16_t username_len;
         char *username;
-        uint16_t password_len;
         char *password;
+        uint16_t client_id_len;
+        uint16_t will_topic_len;
+        uint16_t will_message_len;
+        uint16_t username_len;
+        uint16_t password_len;
     } payload;
 } mqtt_connect;
 
@@ -117,8 +114,8 @@ typedef struct {
     uint16_t pkt_id;
     uint16_t tuples_len;
     struct {
-        uint16_t topic_len;
         char *topic;
+        uint16_t topic_len;
         unsigned qos;
     } *tuples;
 } mqtt_subscribe;
@@ -144,8 +141,8 @@ typedef struct {
 typedef struct {
     uint16_t pkt_id;
     uint16_t topic_len;
-    char *topic;
     uint32_t payload_len;
+    char *topic;
     char *payload;
 } mqtt_publish;
 
