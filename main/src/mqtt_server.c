@@ -10,8 +10,8 @@
 #include <pthread.h>
 #include <time.h>
 
-#include "../include/mqtt_com.h"
-#include "../include/mqtt_control.h"
+#include "../include/mqtt_parser.h"
+#include "../include/mqtt_protocol.h"
 #include "../include/mqtt_util.h"
 
 

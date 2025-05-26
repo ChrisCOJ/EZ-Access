@@ -1,5 +1,5 @@
-#ifndef mqtt_control_h
-#define mqtt_control_h
+#ifndef mqtt_protocol_h
+#define mqtt_protocol_h
 
 /* 
  ?MQTT Documentation:
@@ -93,13 +93,9 @@ typedef struct {
         char *client_id;
         char *will_topic;
         char *will_message;
-        char *username;
-        char *password;
         uint16_t client_id_len;
         uint16_t will_topic_len;
         uint16_t will_message_len;
-        uint16_t username_len;
-        uint16_t password_len;
     } payload;
 } mqtt_connect;
 

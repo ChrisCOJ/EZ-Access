@@ -1,7 +1,7 @@
-#ifndef mqtt_com_h
-#define mqtt_com_h
+#ifndef mqtt_parser_h
+#define mqtt_parser_h
 
-#include "mqtt_control.h"
+#include "mqtt_protocol.h"
 
 // Packet types
 enum packet_type {    
@@ -20,15 +20,19 @@ enum packet_type {
     MQTT_PINGRESP    = 13,
     MQTT_DISCONNECT  = 14,
 };
-// Error numbers
-#define OK                           0
-#define GENERIC_ERR                 -1
-#define INCORRECT_FLAGS             -2
-#define MALFORMED_PACKET            -3
-#define FAILED_MEM_ALLOC            -4
+
+// Error return codes for parser
+enum return_codes {
+    OK                      =  0,
+    GENERIC_ERR             = -1,
+    INCORRECT_FLAGS         = -2,
+    MALFORMED_PACKET        = -3,
+    FAILED_MEM_ALLOC        = -4,
+    INVALID_PACKET_TYPE     = -5,
+};
 
 
-int encode_remaining_length(uint8_t **buf, size_t remaining_length);
+int encode_remaining_length(uint8_t *buf, size_t remaining_length);
 uint32_t decode_remaining_length(uint8_t **buf);
 
 uint8_t unpack_uint8(uint8_t **buf);
@@ -38,8 +42,13 @@ int unpack_str(uint8_t **buf, char **str, uint16_t len);
 int unpack_subscribe(mqtt_packet *packet, uint8_t **buf);
 int unpack_unsubscribe(mqtt_packet *packet, uint8_t **buf);
 int unpack_publish(mqtt_packet *packet, uint8_t **buf);
-int unpack_connect(mqtt_packet *packet, uint8_t **buf);
+int unpack_connect(mqtt_connect *conn, uint8_t **buf);
 int unpack(mqtt_packet *packet, uint8_t **buf, size_t buffer_size);
+
+int pack8(uint8_t **buf, size_t *len, uint8_t item);
+int pack16(uint8_t **buf, size_t *len, uint16_t item);
+int pack32(uint8_t **buf, size_t *len, uint32_t item);
+int pack_str(uint8_t **buf, size_t *len, char *str, uint16_t str_len);
 
 void free_connect(mqtt_connect *connect_packet);
 void free_publish(mqtt_connect *publish_packet);

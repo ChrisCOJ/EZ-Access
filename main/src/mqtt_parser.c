@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 
-#include "../include/mqtt_com.h"
+#include "../include/mqtt_parser.h"
 
 #define CHECK(x, err) do { if ((x)) return (err); } while (0)
 
@@ -28,24 +28,21 @@ uint32_t decode_remaining_length(uint8_t **buf) {
 }
 
 
-int encode_remaining_length(uint8_t *buf, size_t remaining_length) {
-    int bytes_written = 0;
+int encode_remaining_length(size_t remaining_length, uint8_t *remaining_len_bytes) {
+    size_t remaining_len_size = 0;
 
     do {
         uint8_t encoded_byte = remaining_length % 128;
         remaining_length /= 128;
-
-        // If there are more digits to encode, set the top bit of this digit
+        // If there are more digits to encode, set the top bit of this digitz
         if (remaining_length > 0) {
             encoded_byte |= 128;
         }
+        remaining_len_bytes[remaining_len_size++] = encoded_byte;
+    } while (remaining_length > 0 && remaining_len_size < 4);
 
-        buf[bytes_written++] = encoded_byte;
-    } while (remaining_length > 0 && bytes_written < 4);
-
-    return bytes_written;
+    return remaining_len_size;
 }
-
 
 
 uint8_t unpack_uint8(uint8_t **buf) {
@@ -54,14 +51,12 @@ uint8_t unpack_uint8(uint8_t **buf) {
     return value;
 }
 
-
 uint16_t unpack_uint16(uint8_t **buf) {
     uint16_t value;
     memcpy(&value, *buf, sizeof(uint16_t));
     (*buf) += sizeof(uint16_t);
     return ntohs(value);
 }
-
 
 int unpack_str(uint8_t **buf, char **str, uint16_t len) {
     *str = malloc(len + 1);
@@ -73,64 +68,38 @@ int unpack_str(uint8_t **buf, char **str, uint16_t len) {
 }
 
 
-int unpack_connect(mqtt_packet *packet, uint8_t **buf) {
+int unpack_connect(mqtt_connect *conn, uint8_t **buf) {
     // Protocol name length
-    packet->type.connect.protocol_name.len = unpack_uint16(buf);
+    conn->protocol_name.len = unpack_uint16(buf);
     // Protocol name
-    int err = unpack_str(buf, &packet->type.connect.protocol_name.name, 
-                packet->type.connect.protocol_name.len);
+    int err = unpack_str(buf, &conn->protocol_name.name, conn->protocol_name.len);
     if (err) {
         return FAILED_MEM_ALLOC;
     }
     // Protocol level
-    packet->type.connect.protocol_level = unpack_uint8(buf);
+    conn->protocol_level = unpack_uint8(buf);
     // Connect flags
-    packet->type.connect.connect_flags = unpack_uint8(buf);
+    conn->connect_flags = unpack_uint8(buf);
     // Keep alive
-    packet->type.connect.keep_alive = unpack_uint16(buf);
+    conn->keep_alive = unpack_uint16(buf);
     // Client ID
-    packet->type.connect.payload.client_id_len = unpack_uint16(buf);
-    int err = unpack_str(buf, &packet->type.connect.payload.client_id, 
-                packet->type.connect.payload.client_id_len);
+    conn->payload.client_id_len = unpack_uint16(buf);
+    int err = unpack_str(buf, &conn->payload.client_id, conn->payload.client_id_len);
     if (err) {
         return FAILED_MEM_ALLOC;
     }
     // Will
-    if ((packet->type.connect.connect_flags & WILL_FLAG) == WILL_FLAG) {
-        packet->type.connect.payload.will_topic_len = unpack_uint16(buf);
-        if (packet->type.connect.payload.will_topic_len) {
-            int err = unpack_str(buf, &packet->type.connect.payload.will_topic, 
-                        packet->type.connect.payload.will_topic_len);
+    if ((conn->connect_flags & WILL_FLAG) == WILL_FLAG) {
+        conn->payload.will_topic_len = unpack_uint16(buf);
+        if (conn->payload.will_topic_len) {
+            int err = unpack_str(buf, &conn->payload.will_topic, conn->payload.will_topic_len);
             if (err) {
                 return FAILED_MEM_ALLOC;
             }
         }
-        packet->type.connect.payload.will_message_len = unpack_uint16(buf);
-        if (packet->type.connect.payload.will_message_len) {
-            int err = unpack_str(buf, &packet->type.connect.payload.will_message, 
-                        packet->type.connect.payload.will_message_len);
-            if (err) {
-                return FAILED_MEM_ALLOC;
-            }
-        }
-    }
-    // Username
-    if (((packet->type.connect.connect_flags & USERNAME_FLAG) == USERNAME_FLAG)) {
-        packet->type.connect.payload.username_len = unpack_uint16(buf);
-        if (packet->type.connect.payload.username_len) {
-            int err = unpack_str(buf, &packet->type.connect.payload.username, 
-                        packet->type.connect.payload.username_len);
-            if (err) {
-                return FAILED_MEM_ALLOC;
-            }
-        }
-    }
-    // Password
-    if (((packet->type.connect.connect_flags & PASSWORD_FLAG) == PASSWORD_FLAG)) {
-        packet->type.connect.payload.password_len = unpack_uint16(buf);
-        if (packet->type.connect.payload.password_len) {
-            int err = unpack_str(buf, &packet->type.connect.payload.password, 
-                        packet->type.connect.payload.password_len);
+        conn->payload.will_message_len = unpack_uint16(buf);
+        if (conn->payload.will_message_len) {
+            int err = unpack_str(buf, &conn->payload.will_message, conn->payload.will_message_len);
             if (err) {
                 return FAILED_MEM_ALLOC;
             }
@@ -255,7 +224,8 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
 
     switch (packet_type) {
         case CONNECT_TYPE: {
-            return unpack_connect(packet, buf);
+            mqtt_connect *conn = &(packet->type.connect);
+            return unpack_connect(conn, buf);
         }
 
         case PUBLISH_TYPE: {
@@ -288,7 +258,7 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
 }
 
 
-int push8(uint8_t **buf, size_t *len, uint8_t item){
+int pack8(uint8_t **buf, size_t *len, uint8_t item) {
     uint8_t *tmp = realloc(*buf, *len + sizeof(uint8_t));
     if (!tmp) return FAILED_MEM_ALLOC;
     *buf = tmp;
@@ -297,7 +267,7 @@ int push8(uint8_t **buf, size_t *len, uint8_t item){
     return 0;
 }
 
-int push16(uint8_t **buf, size_t *len, uint16_t item) {
+int pack16(uint8_t **buf, size_t *len, uint16_t item) {
     uint16_t *tmp = realloc(*buf, *len + sizeof(uint16_t));
     if (!tmp) return FAILED_MEM_ALLOC;
     *buf = tmp;
@@ -307,7 +277,7 @@ int push16(uint8_t **buf, size_t *len, uint16_t item) {
     return 0;
 }
 
-int push32(uint8_t **buf, size_t *len, uint32_t item) {
+int pack32(uint8_t **buf, size_t *len, uint32_t item) {
     uint32_t *tmp = realloc(*buf, *len + sizeof(uint32_t));
     if (!tmp) return FAILED_MEM_ALLOC;
     *buf = tmp;
@@ -317,7 +287,7 @@ int push32(uint8_t **buf, size_t *len, uint32_t item) {
     return 0;
 }
 
-int push_str(uint8_t **buf, size_t *len, char *str, uint16_t str_len) {
+int pack_str(uint8_t **buf, size_t *len, char *str, uint16_t str_len) {
     char *tmp = realloc(*buf, *len + str_len);
     if (!tmp) return FAILED_MEM_ALLOC;
     *buf = tmp;
@@ -326,37 +296,81 @@ int push_str(uint8_t **buf, size_t *len, char *str, uint16_t str_len) {
     return 0;
 }
 
-int pack(mqtt_packet *packet, uint8_t **buf) {
-    size_t len = 0;
-    *buf = NULL;
 
-    /* Push packet specific data to buf */
-    uint8_t packet_type = packet->header.fixed_header & TYPE_MASK;
-    switch(packet_type) {
-        case(CONNECT_TYPE): {
-            /* Check if the message to be packed is a valid connect packet */
-            CHECK(!packet->type.connect.protocol_name.len, MALFORMED_PACKET);
-            CHECK(!packet->type.connect.protocol_name.name, MALFORMED_PACKET);
-            CHECK(!packet->type.connect.payload.client_id_len, MALFORMED_PACKET);
-            /* Variable Header */
-            // Protocol name len
-            CHECK(push16(buf, &len, packet->type.connect.protocol_name.len), FAILED_MEM_ALLOC);
-            // Protocol name
-            CHECK(push_str(buf, &len, packet->type.connect.protocol_name.name, 
-                packet->type.connect.protocol_name.len), FAILED_MEM_ALLOC);
-            // Protocol level
-            CHECK(push8(buf, &len, packet->type.connect.protocol_level), FAILED_MEM_ALLOC);
-            // Connect flags
-            CHECK(push8(buf, &len, packet->type.connect.connect_flags), FAILED_MEM_ALLOC);
-            // Keep alive
-            CHECK(push16(buf, &len, packet->type.connect.keep_alive), FAILED_MEM_ALLOC);
-            /* Payload */
-            CHECK(push16(buf, &len, packet->type.connect.payload.client_id_len), FAILED_MEM_ALLOC);
-            CHECK(push_str(buf, &len, packet->type.connect.payload.client_id, 
-                packet->type.connect.payload.client_id_len), FAILED_MEM_ALLOC);
-        }
-        default: {
-            return GENERIC_ERR;
-        }
+int pack_connect(mqtt_header header, mqtt_connect *conn, uint8_t **buf) {
+    size_t len = 0;
+    size_t remaining_len = 0;
+    /* --- Sanity Checks --- */
+    CHECK(!conn->protocol_name.len, MALFORMED_PACKET);
+    CHECK(!conn->protocol_name.name, MALFORMED_PACKET);
+    CHECK(!conn->protocol_level, MALFORMED_PACKET);
+    CHECK(!conn->connect_flags, MALFORMED_PACKET);
+    CHECK(!conn->keep_alive, MALFORMED_PACKET);
+    CHECK(!conn->payload.client_id_len, MALFORMED_PACKET);
+    CHECK(!conn->payload.client_id, MALFORMED_PACKET);
+
+    /* --- Allocate buffer size --- */
+    *buf = malloc(1024);
+    CHECK(!(*buf), FAILED_MEM_ALLOC);
+    // Reserve space for the fixed header
+    uint8_t *buf_start = *buf;
+    uint8_t *payload_buf = *buf + 5;
+
+    /* --- PACK --- */
+    /* Variable Header */
+    // Pack protocol name
+    CHECK(pack16(payload_buf, &len, conn->protocol_name.len), FAILED_MEM_ALLOC);
+    CHECK(pack_str(payload_buf, &len, conn->protocol_name.name, 
+        conn->protocol_name.len), FAILED_MEM_ALLOC);
+    remaining_len += (sizeof(uint16_t) + conn->protocol_name.len);
+    // Pack protocol level
+    CHECK(pack8(payload_buf, &len, conn->protocol_level), FAILED_MEM_ALLOC);
+    remaining_len += sizeof(uint8_t);
+    // Pack connect flags
+    CHECK(pack8(payload_buf, &len, conn->connect_flags), FAILED_MEM_ALLOC);
+    remaining_len += sizeof(uint8_t);
+    // Pack keep alive
+    CHECK(pack16(payload_buf, &len, conn->keep_alive), FAILED_MEM_ALLOC);
+    remaining_len += sizeof(uint16_t);
+
+    /* Payload */
+    // Pack client ID
+    CHECK(pack16(payload_buf, &len, conn->payload.client_id_len), FAILED_MEM_ALLOC);
+    CHECK(pack_str(payload_buf, &len, conn->payload.client_id, conn->payload.client_id_len), FAILED_MEM_ALLOC);
+    remaining_len += (sizeof(uint16_t) + conn->payload.client_id_len);
+    // Pack will topic + will message if will flag is set
+    if ((conn->connect_flags & WILL_FLAG) == WILL_FLAG) {
+        // Check if will message/topic aren't empty
+        CHECK(!conn->payload.will_topic_len, MALFORMED_PACKET);
+        CHECK(!conn->payload.will_topic, MALFORMED_PACKET);
+        CHECK(!conn->payload.will_message_len, MALFORMED_PACKET);
+        CHECK(!conn->payload.will_message, MALFORMED_PACKET);
+        // Pack will topic
+        CHECK(pack16(payload_buf, &len, conn->payload.will_topic_len), FAILED_MEM_ALLOC);
+        CHECK(pack_str(payload_buf, &len, conn->payload.will_topic, conn->payload.will_topic_len), FAILED_MEM_ALLOC);
+        remaining_len += (sizeof(uint16_t) + conn->payload.will_topic_len);
+        // Pack will message
+        CHECK(pack16(payload_buf, &len, conn->payload.will_message_len), FAILED_MEM_ALLOC);
+        CHECK(pack_str(payload_buf, &len, conn->payload.will_message, conn->payload.will_message_len), FAILED_MEM_ALLOC);
+        remaining_len += (sizeof(uint16_t) + conn->payload.will_message_len);
     }
+    // Add the fixed header at the start
+    uint8_t remaining_len_bytes[4];
+    size_t encoded_bytes = encode_remaining_length(remaining_len, remaining_len_bytes);
+    // Make space for the fixed header
+    memmove(buf_start + 1 + encoded_bytes, *payload_buf, remaining_len);
+    // Push the first byte of the fixed header
+    CHECK(!header.fixed_header, MALFORMED_PACKET);
+    *buf_start = header.fixed_header;
+    // Push the encoded remaining length field to the buffer
+    memcpy(buf_start + 1, remaining_len_bytes, encoded_bytes);
+    size_t total_packet_size = 1 + encoded_bytes + remaining_len;
+
+    return total_packet_size;
+}
+
+
+int pack_publish(mqtt_publish *pub, uint8_t **buf) {
+    size_t len = 0;
+    
 }
