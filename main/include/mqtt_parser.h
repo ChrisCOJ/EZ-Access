@@ -32,31 +32,231 @@ enum return_codes {
 };
 
 
-int encode_remaining_length(uint8_t *buf, size_t remaining_length);
+typedef struct {
+    uint8_t *buf;
+    size_t buf_len;
+    int return_code;
+} packing_status;
+
+/**
+ * @brief Encodes the MQTT Remaining Length field using variable-length encoding.
+ *
+ * @param[in] remaining_length The length value to encode.
+ * @param[out] remaining_len_bytes Output buffer to write the encoded bytes (max 4 bytes).
+ * @return Number of bytes written to the output buffer.
+ */
+int encode_remaining_length(size_t remaining_length, uint8_t *remaining_len_bytes);
+
+/**
+ * @brief Decodes a variable-length MQTT Remaining Length field from the buffer.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer (advances the pointer).
+ * @return Decoded value, or 0xFFFFFFFF on error.
+ */
 uint32_t decode_remaining_length(uint8_t **buf);
 
+/**
+ * @brief Unpacks a uint8_t from the buffer and advances the pointer.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @return The unpacked uint8_t value.
+ */
 uint8_t unpack_uint8(uint8_t **buf);
+
+/**
+ * @brief Unpacks a big-endian uint16_t from the buffer and advances the pointer.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @return The unpacked uint16_t value.
+ */
 uint16_t unpack_uint16(uint8_t **buf);
+
+/**
+ * @brief Allocates memory and unpacks a string from the buffer.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @param[out] str Output pointer to hold the allocated string.
+ * @param[in] len Length of the string to unpack.
+ * @return 0 on success, -1 on memory allocation failure.
+ */
 int unpack_str(uint8_t **buf, char **str, uint16_t len);
 
-int unpack_subscribe(mqtt_packet *packet, uint8_t **buf);
-int unpack_unsubscribe(mqtt_packet *packet, uint8_t **buf);
-int unpack_publish(mqtt_packet *packet, uint8_t **buf);
-int unpack_connect(mqtt_connect *conn, uint8_t **buf);
-int unpack(mqtt_packet *packet, uint8_t **buf, size_t buffer_size);
-
+/**
+ * @brief Packs a uint8_t into the buffer and updates the length.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer (may be reallocated).
+ * @param[in,out] len Pointer to current length of buffer (is incremented).
+ * @param[in] item The value to pack.
+ * @return 0 on success, error code on failure.
+ */
 int pack8(uint8_t **buf, size_t *len, uint8_t item);
+
+/**
+ * @brief Packs a big-endian uint16_t into the buffer and updates the length.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer (may be reallocated).
+ * @param[in,out] len Pointer to current length of buffer (is incremented).
+ * @param[in] item The value to pack.
+ * @return 0 on success, error code on failure.
+ */
 int pack16(uint8_t **buf, size_t *len, uint16_t item);
+
+/**
+ * @brief Packs a big-endian uint32_t into the buffer and updates the length.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer (may be reallocated).
+ * @param[in,out] len Pointer to current length of buffer (is incremented).
+ * @param[in] item The value to pack.
+ * @return 0 on success, error code on failure.
+ */
 int pack32(uint8_t **buf, size_t *len, uint32_t item);
+
+/**
+ * @brief Packs a string of fixed length into the buffer.
+ *
+ * @param[in,out] buf Pointer to the buffer pointer (may be reallocated).
+ * @param[in,out] len Pointer to current length of buffer (is incremented).
+ * @param[in] str The string to copy into the buffer.
+ * @param[in] str_len The number of bytes from the string to copy.
+ * @return 0 on success, error code on failure.
+ */
 int pack_str(uint8_t **buf, size_t *len, char *str, uint16_t str_len);
 
-void free_connect(mqtt_connect *connect_packet);
-void free_publish(mqtt_connect *publish_packet);
-void free_subscribe(mqtt_connect *subscribe_packet);
-void free_unsubscribe(mqtt_connect *unsubscribe_packet);
-void free_puback(mqtt_connect *puback_packet);
-void free_disconnect(mqtt_connect *disconnect_packet);
+/**
+ * @brief Finalizes the MQTT packet by prepending the fixed header and encoding the remaining length.
+ *
+ * @param[in,out] buf_start Pointer to the buffer pointer where the final packet will reside. Reallocated to fit total size.
+ * @param[in] payload_start Pointer to the start of the payload in the buffer.
+ * @param[in] remaining_len Length of the remaining packet (variable header + payload).
+ * @param[in] header_byte Fixed header byte (packet type and flags).
+ * @param[out] status result struct which contains the final buffer and error codes (if applicable)
+ * @return Total size of the final packet on success, or an error code if allocation fails.
+ */
+packing_status finalize_packet(uint8_t **buf_start, uint8_t *payload_start, size_t remaining_len, uint8_t header_byte, packing_status status);
 
+/**
+ * @brief Packs an MQTT CONNECT packet into a binary buffer.
+ *
+ * @param[in] conn Pointer to the connect data structure holding connection details.
+ * @return packing_status struct containing the final packet buffer, its length and error code (0 = success, otherwise failure).
+ */
+packing_status pack_connect(mqtt_connect *conn);
+
+/**
+ * @brief Packs an MQTT PUBLISH packet into a binary buffer.
+ *
+ * @param[in] pub Pointer to the publish data structure holding topic, payload, and QoS info.
+ * @param[in] flags Publish specific flags represented by the lower nibble of the header byte
+ * @return packing_status struct containing the final packet buffer, its length and error code (0 = success, otherwise failure).
+ */
+packing_status pack_publish(mqtt_publish *pub, uint8_t flags);
+
+/**
+ * @brief Packs an MQTT SUBSCRIBE packet into a binary buffer.
+ *
+ * @param[in] sub Pointer to the subscribe structure containing topic filters and QoS levels.
+ * @return packing_status struct containing the final packet buffer, its length and error code (0 = success, otherwise failure).
+ */
+packing_status pack_subscribe(mqtt_subscribe *sub);
+
+/**
+ * @brief Packs an MQTT UNSUBSCRIBE packet into a binary buffer.
+ *
+ * @param[in] unsub Pointer to the unsubscribe structure containing topic filters to remove.
+ * @return packing_status struct containing the final packet buffer, its length and error code (0 = success, otherwise failure).
+ */
+packing_status pack_unsubscribe(mqtt_subscribe *unsub);
+
+/**
+ * @brief Unpacks a CONNECT packet from the buffer into a mqtt_connect structure.
+ *
+ * @param[out] conn Pointer to the connect struct to fill.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @return MQTT_CONNECT on success, or an error code on failure.
+ */
+int unpack_connect(mqtt_connect *conn, uint8_t **buf);
+
+/**
+ * @brief Unpacks a PUBLISH packet from the buffer into a mqtt_publish structure.
+ *
+ * @param[out] publish Pointer to the publish struct to fill.
+ * @param[in] header The MQTT fixed header.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @return MQTT_PUBLISH on success, or an error code on failure.
+ */
+int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf);
+
+/**
+ * @brief Unpacks a SUBSCRIBE packet from the buffer into a mqtt_subscribe structure.
+ *
+ * @param[out] subscribe Pointer to the subscribe struct to fill.
+ * @param[in] header The MQTT fixed header.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @return MQTT_SUBSCRIBE on success, or an error code on failure.
+ */
+int unpack_subscribe(mqtt_subscribe *subscribe, mqtt_header header, uint8_t **buf);
+
+/**
+ * @brief Unpacks an UNSUBSCRIBE packet from the buffer into a mqtt_unsubscribe structure.
+ *
+ * @param[out] unsubscribe Pointer to the unsubscribe struct to fill.
+ * @param[in] header The MQTT fixed header.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @return MQTT_UNSUBSCRIBE on success, or an error code on failure.
+ */
+int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, mqtt_header header, uint8_t **buf);
+
+/**
+ * @brief Dispatches MQTT packet unpacking based on its type.
+ *
+ * @param[out] packet Pointer to the packet structure to populate.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @param[in] buf_size Size of the buffer.
+ * @return MQTT_<TYPE> constant on success, or an error code.
+ */
+int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size);
+
+/**
+ * @brief Frees all heap-allocated memory inside a CONNECT packet.
+ *
+ * @param[in,out] conn Pointer to the mqtt_connect structure.
+ */
+void free_connect(mqtt_connect *conn);
+
+/**
+ * @brief Frees all heap-allocated memory inside a PUBLISH packet.
+ *
+ * @param[in,out] pub Pointer to the mqtt_publish structure.
+ */
+void free_publish(mqtt_publish *pub);
+
+/**
+ * @brief Frees all heap-allocated memory inside a SUBSCRIBE packet.
+ *
+ * @param[in,out] sub Pointer to the mqtt_subscribe structure.
+ */
+void free_subscribe(mqtt_subscribe *sub);
+
+/**
+ * @brief Frees all heap-allocated memory inside an UNSUBSCRIBE packet.
+ *
+ * @param[in,out] unsub Pointer to the mqtt_unsubscribe structure.
+ */
+void free_unsubscribe(mqtt_unsubscribe *unsub);
+
+/**
+ * @brief Frees memory inside an MQTT packet based on its type.
+ *
+ * @param[in,out] packet Pointer to the mqtt_packet structure.
+ */
+void free_packet(mqtt_packet *packet);
+
+/**
+ * @brief Sends an MQTT packet to the specified client.
+ *
+ * @param[in] client Socket file descriptor of the client.
+ * @param[in] packet_type Pointer to the packet to send.
+ */
 void mqtt_send(int client, mqtt_packet *packet_type);
 
-#endif
+#endif // mqtt_parser_h

@@ -28,6 +28,9 @@
 #define PINGRESP_TYPE           0xD0
 #define DISCONNECT_TYPE         0xE0
 
+// Constant packet sizes
+#define CONNACK_PACKET_SIZE     4
+
 // Fixed header masks
 #define TYPE_MASK               0xF0
 #define FLAG_MASK               0x0F
@@ -40,9 +43,9 @@
 #define QOS_EO_FLAG             (1 << 2)        // Exactly once
 #define DUP_FLAG                (1 << 3)
 
-/* Subscribe flags */
-#define SUBSCRIBE_FLAGS         0b00000010
-/* Disconnect flags */
+/* Subscribe/Unsubscribe constant flags */
+#define SUB_UNSUB_FLAGS         0x02
+/* Disconnect constant flags */
 #define DISCONNECT_FLAGS        0x00
 
 /* Connect flags */
@@ -102,7 +105,7 @@ typedef struct {
 
 typedef struct {
     uint8_t session_present_flag;   // 1 = session present flag set, 0 = session present flag unset
-    uint8_t rc;
+    uint8_t return_code;
 } mqtt_connack;
 
 
