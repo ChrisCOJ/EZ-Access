@@ -218,7 +218,7 @@ int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, mqtt_header header, uint8_
         remaining_len -= unsubscribe->tuples[i].topic_len;
 
         // Unpack topic name
-        err = unpack_str(buf, unsubscribe->tuples[i].topic, unsubscribe->tuples[i].topic_len);
+        err = unpack_str(buf, &unsubscribe->tuples[i].topic, unsubscribe->tuples[i].topic_len);
         if (err) {
             return FAILED_MEM_ALLOC;
         }
@@ -316,39 +316,35 @@ int pack_str(uint8_t **buf, size_t *buf_len, char *str, uint16_t str_len) {
 }
 
 
-packing_status finalize_packet(uint8_t *remaining_len_buf, size_t remaining_len, uint8_t header_byte, packing_status *status) {
+packing_status finalize_packet(uint8_t *remaining_len_buf, size_t remaining_len, uint8_t header_byte, packing_status status) {
     // Convert remaining_len from an integer to a variable length encoded buffer
     uint8_t remaining_len_encoded[4];
     size_t encoded_len = encode_remaining_length(remaining_len, remaining_len_encoded);
 
     // Allocate enough space for the entire packet buffer
-    status->buf_len = 1 + encoded_len + remaining_len;
-    status->buf = realloc(status->buf, status->buf_len);
-    CHECK(!(status->buf), FAILED_MEM_ALLOC, status->return_code);
-    if (status->return_code) return *status;  // Early return if realloc fails to prevent undefined behaviour
+    status.buf_len = 1 + encoded_len + remaining_len;
+    remaining_len_buf = realloc(remaining_len_buf, status.buf_len);
+    CHECK(!(remaining_len_buf), FAILED_MEM_ALLOC, status.return_code);
+    if (status.return_code) return status;  // Early return if realloc fails to prevent undefined behaviour
+
+    // Shift buffer to the right to make space for the fixed header
+    memmove(remaining_len_buf + 1 + encoded_len, remaining_len_buf, remaining_len);
     
-    // Push the first byte of the fixed header
-    status->buf[0] = header_byte;
-    // Push the encoded remaining length field to the buffer
-    memcpy(status->buf + 1, remaining_len_encoded, encoded_len);
-    // Push the remaining buffer after the fixed headers
-    memmove(status->buf + 1 + encoded_len, remaining_len_buf, remaining_len);
-    return *status;
+    // Push the fixed header at the start of the buffer
+    remaining_len_buf[0] = header_byte;
+    memcpy(remaining_len_buf + 1, remaining_len_encoded, encoded_len);
+
+    status.buf = remaining_len_buf;
+    return status;
 }
 
 
 packing_status pack_connect(mqtt_connect *conn) {
     packing_status status;
-    // Malloc an initial size for the buffer
-    uint8_t *tmp = malloc(MAX_FIXED_HEADER_LEN);
-    if (!tmp) {
-        // Early return if malloc fails to avoid undefined behaviour when trying to dereference a null pointer
-        status.return_code = FAILED_MEM_ALLOC;
-        return status;
-    }
-    status.buf = tmp;
+
     status.return_code = 0;
-    size_t buf_len = 0; 
+    uint8_t *remaining_len_buf = NULL;
+    size_t buf_len = 0;
 
     /* --- Sanity Checks --- */
     CHECK(!conn->protocol_name.len, MALFORMED_PACKET, status.return_code);
@@ -357,9 +353,6 @@ packing_status pack_connect(mqtt_connect *conn) {
     CHECK(!conn->payload.client_id_len, MALFORMED_PACKET, status.return_code);
     CHECK(!conn->payload.client_id, MALFORMED_PACKET, status.return_code);
     if (status.return_code) return status;  // early return
-
-    // Reserve space for the fixed header
-    uint8_t *remaining_len_buf = status.buf + MAX_FIXED_HEADER_LEN;
 
     /* Variable Header */
     // Pack protocol name
@@ -394,18 +387,20 @@ packing_status pack_connect(mqtt_connect *conn) {
 
     /* --- Add the fixed header at the start --- */
     uint8_t header_byte = CONNECT_TYPE;
-    return finalize_packet(remaining_len_buf, buf_len, header_byte, &status);
+    return finalize_packet(remaining_len_buf, buf_len, header_byte, status);
 }
 
 
 packing_status pack_connack(mqtt_connack connack) {
-    uint8_t buf[CONNACK_PACKET_SIZE];
     packing_status status = {
-        .buf = buf,
         .buf_len = CONNACK_PACKET_SIZE,
         .return_code = 0,
     };
-
+    status.buf = malloc(status.buf_len);
+    if (!status.buf) {
+        status.return_code = FAILED_MEM_ALLOC;
+        return status;
+    }
     /* 
     * Size of connack is constant via the mqtt protocol and each element is exactly 
     * 1 byte long so we can just push every element sequentially.
@@ -421,15 +416,9 @@ packing_status pack_connack(mqtt_connack connack) {
 
 packing_status pack_publish(mqtt_publish *pub, uint8_t flags) {
     packing_status status;
-    // Malloc an initial size for the buffer
-    uint8_t *tmp = malloc(MAX_FIXED_HEADER_LEN);
-    if (!tmp) {
-        // Early return if malloc fails to avoid undefined behaviour when trying to dereference a null pointer
-        status.return_code = FAILED_MEM_ALLOC;
-        return status;
-    }
-    status.buf = tmp;
+
     status.return_code = 0;
+    uint8_t *remaining_len_buf = NULL;    
     size_t buf_len = 0; 
 
     /* --- Sanity checks --- */
@@ -438,9 +427,6 @@ packing_status pack_publish(mqtt_publish *pub, uint8_t flags) {
     CHECK(!pub->topic, MALFORMED_PACKET, status.return_code);
     // Payload can have a 0 length
     if (status.return_code) return status;
-
-    // Reserve space for the fixed header
-    uint8_t *remaining_len_buf = status.buf + MAX_FIXED_HEADER_LEN;
 
     /* Variable Header */
     // Topic Name
@@ -454,21 +440,15 @@ packing_status pack_publish(mqtt_publish *pub, uint8_t flags) {
 
     /* --- Add the fixed header at the start --- */
     uint8_t header_byte = PUBLISH_TYPE | flags;
-    return finalize_packet(&remaining_len_buf, buf_len, header_byte, &status);
+    return finalize_packet(&remaining_len_buf, buf_len, header_byte, status);
 }
 
 
 packing_status pack_subscribe(mqtt_subscribe *sub) {
     packing_status status;
-    // Malloc an initial size for the buffer
-    uint8_t *tmp = malloc(MAX_FIXED_HEADER_LEN);
-    if (!tmp) {
-        // Early return if malloc fails to avoid undefined behaviour when trying to dereference a null pointer
-        status.return_code = FAILED_MEM_ALLOC;
-        return status;
-    }
-    status.buf = tmp;
+
     status.return_code = 0;
+    uint8_t *remaining_len_buf = NULL;    
     size_t buf_len = 0; 
     
     /* --- Sanity checks --- */
@@ -478,9 +458,6 @@ packing_status pack_subscribe(mqtt_subscribe *sub) {
     CHECK(!sub->tuples->topic, MALFORMED_PACKET, status.return_code);
     CHECK(!sub->tuples->topic_len, MALFORMED_PACKET, status.return_code);
     if (status.return_code) return status;
-
-    // Reserve space for the fixed header
-    uint8_t *remaining_len_buf = status.buf + MAX_FIXED_HEADER_LEN;
 
     // Pack packet ID
     CHECK(pack16(&remaining_len_buf, &buf_len, sub->pkt_id), FAILED_MEM_ALLOC, status.return_code);
@@ -495,21 +472,15 @@ packing_status pack_subscribe(mqtt_subscribe *sub) {
 
     /* --- Add the fixed header at the start --- */
     uint8_t header_byte = SUBSCRIBE_TYPE | SUB_UNSUB_FLAGS;
-    return finalize_packet(&remaining_len_buf, buf_len, header_byte, &status);
+    return finalize_packet(&remaining_len_buf, buf_len, header_byte, status);
 }
 
 
 packing_status pack_unsubscribe(mqtt_subscribe *unsub) {
     packing_status status;
-    // Malloc an initial size for the buffer
-    uint8_t *tmp = malloc(MAX_FIXED_HEADER_LEN);
-    if (!tmp) {
-        // Early return if malloc fails to avoid undefined behaviour when trying to dereference a null pointer
-        status.return_code = FAILED_MEM_ALLOC;
-        return status;
-    }
-    status.buf = tmp;
+
     status.return_code = 0;
+    uint8_t *remaining_len_buf = NULL;    
     size_t buf_len = 0; 
 
     /* --- Sanity checks --- */
@@ -519,9 +490,6 @@ packing_status pack_unsubscribe(mqtt_subscribe *unsub) {
     CHECK(!unsub->tuples->topic, MALFORMED_PACKET, status.return_code);
     CHECK(!unsub->tuples->topic_len, MALFORMED_PACKET, status.return_code);
     if (status.return_code) return status;
-
-    // Reserve space for the fixed header
-    uint8_t *remaining_len_buf = status.buf + MAX_FIXED_HEADER_LEN;
 
     // Pack packet ID
     CHECK(pack16(&remaining_len_buf, &buf_len, unsub->pkt_id), FAILED_MEM_ALLOC, status.return_code);
@@ -535,16 +503,19 @@ packing_status pack_unsubscribe(mqtt_subscribe *unsub) {
 
     /* --- Add the fixed header at the start --- */
     uint8_t header_byte = UNSUBSCRIBE_TYPE | SUB_UNSUB_FLAGS;
-    return finalize_packet(&remaining_len_buf, buf_len, header_byte, &status);
+    return finalize_packet(&remaining_len_buf, buf_len, header_byte, status);
 }
 
 
 packing_status pack_disconnect() {
     packing_status status;
     status.buf_len = 2;
-    uint8_t buf[status.buf_len];
-    
-    status.buf = buf;
+    status.buf = malloc(status.buf_len);
+    if (!status.buf) {
+        status.return_code = FAILED_MEM_ALLOC;
+        return status;
+    }
+
     status.buf[0] = DISCONNECT_TYPE;    // Flags = 0
     status.buf[1] = 0x00;
     status.return_code = 0;
