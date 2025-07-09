@@ -3,18 +3,38 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
+
+#include "../include/mqtt_protocol.h"
+#include "../include/mqtt_parser.h"
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 1883
 
 
-void send_connect_packet() {
-    
+int send_connect_packet(int socket) {
+    char *client_id = "Test Client";
+    mqtt_connect conn = default_init_connect(client_id, strlen(client_id));
+
+    packing_status status = pack_connect(&conn);
+    if (status.return_code < 0) {
+        printf("Packing connect failed with err code %d", status.return_code);
+    }
+
+    // for (int i = 0; i < status.buf_len; ++i) {
+    //     printf("%X\n", status.buf[i]);
+    // }
+
+    ssize_t bytes_written = send(socket, (uint8_t *)status.buf, status.buf_len, 0);
+    if (bytes_written  == -1) {
+        perror("Send failed!");
+    }
+    return 0;
 }
 
 
-void on_connect() {
-    send_connect_packet();
+void on_connect(int socket) {
+    send_connect_packet(socket);
 }
 
 
@@ -47,5 +67,5 @@ int main() {
 
     printf("Connected to MQTT server.\n");
 
-    on_connect();
+    on_connect(sock);
 }

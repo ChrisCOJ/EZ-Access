@@ -18,7 +18,7 @@
 #define PORT 1883
 #define BACKLOG 5
 #define TIMEOUT_INTERVAL_SECONDS    20      // The client socket will timeout following this interval before a CONNECT (keep alive) packet is sent
-#define TIMEOUT_INTERVAL_USECONDS   0
+#define TIMEOUT_INTERVAL_USECONDS   0       // Time interval in microseconds
 
 typedef struct sockaddr_in sockaddr_in;
 typedef struct sockaddr sockaddr;
@@ -31,7 +31,7 @@ void handle_sigint() {
 }
 
 
-void* process_client_messages(void* client_socket) {
+void *process_client_messages(void *arg) {
     /*
     Params: client_socket is an integer file descriptor that represents a specific client/server socket connection.
     */
@@ -39,51 +39,58 @@ void* process_client_messages(void* client_socket) {
     /*
     The first message that is expected from the client once communication is established is an MQTT CONNECT control packet.
     Any other initial message will result in the client network connection being dropped.
-    A unique client shall only send one CONNECT packet throghout its connection lifetime. Any duplicate CONNECT packets will
+    A unique client must only send one CONNECT packet throghout its connection lifetime. Any duplicate CONNECT packets will
     result in the client network connection being dropped.
     */
+    int client_socket = *(int *)arg;
 
     // Set an initial appropriate client timeout before the keep alive parameter is set via the CONNECT packet
     struct timeval timeout;
     timeout.tv_sec = TIMEOUT_INTERVAL_SECONDS;
     timeout.tv_usec = TIMEOUT_INTERVAL_USECONDS;
-    setsockopt(*(int *)client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     unsigned msg_number = 0;
     bool connection_alive = true;
 
     while (connection_alive) {
-        mqtt_packet packet;
-        uint8_t buffer[1024] = {0};
-        int read_size = read(*(int *)client_socket, buffer, sizeof(buffer));  // The size in bytes of the message read from the client socket
+        mqtt_packet packet = {0};
+        uint8_t *buffer = malloc(1024);
+        if (!buffer) exit(EXIT_FAILURE);
+        
+        int read_size = read(client_socket, buffer, 1024);  // The size in bytes of the message read from the client socket
+        printf("Buffer Size = %d\n", read_size);
+        for (int i = 0; i < read_size; ++i) {
+            printf("%02X\n", buffer[i]);
+        }
 
         if (read_size > 0) {
             // Parse the message received from the client.
             int packet_type = unpack(&packet, &buffer, read_size);  // Reconstruct bytestream as mqtt_packet and store in packet
 
-            if (msg_number == 0 && packet_type != MQTT_CONNECT)  {
-                perror("Unexpected MQTT packet type. First packet MUST be MQTT_CONNECT, dropping client...");
+            if (msg_number == 0 && packet_type != MQTT_CONNECT) {
+                perror("Unexpected MQTT packet type. First packet MUST be MQTT_CONNECT, dropping connection...\n");
                 // drop_client(*(int *)client_socket);
                 exit(EXIT_FAILURE);
             }
 
             if (msg_number > 0 && packet_type == MQTT_CONNECT) {
-                perror("Duplicate MQTT_CONNECT packet detected, dropping client...");
+                perror("Duplicate MQTT_CONNECT packet detected, dropping connection...\n");
                 // drop_client(*(int *)client_socket);
                 exit(EXIT_FAILURE);
             }
 
             switch(packet_type) {
-                case -1:
-                    perror("Encountered error while parsing client message");
-                    break;
-                case MQTT_CONNECT:
-                    printf("CONNECT packet received correctly");
-                    timeout.tv_sec = packet.type.connect.keep_alive;
+                case MQTT_CONNECT: {
+                    mqtt_connect con = packet.type.connect;
+                    printf("CONNECT packet received correctly\n");
+                    timeout.tv_sec = con.keep_alive;
                     timeout.tv_usec = TIMEOUT_INTERVAL_USECONDS;
-                    setsockopt(*(int *)client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-                    // mqtt_handle_connect(*(int *)client_socket);
+                    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+                    printf("Client ID = %s\n", con.payload.client_id);
+                    // mqtt_handle_connect(client_socket);
                     break;
+                }
                 // case MQTT_PUBLISH:
                 //     mqtt_handle_publish();
                 //     break;
@@ -99,53 +106,21 @@ void* process_client_messages(void* client_socket) {
                 // case MQTT_DISCONNECT:
                 //     mqtt_handle_disconnect();
                 //     break;
-
+                
                 default:
-                    perror("Client sent an invalid packet");
+                    perror("Encountered error while parsing client message!\n");
                     break;
             }
+            ++msg_number;
         }
         else {
             connection_alive = false;
-            printf("Client connection severed!\n");
+            close(client_socket);
+            printf("Client connection terminated!\n");
         }
     }   
-
     return NULL;
 };
-
-
-// void drop_client(int client_socket) {
-
-// }
-
-
-// void mqtt_handle_connect(int client_socket) {
-//     // Serialize a CONNACK message and send it to the client in acknowledgment of successful mqtt connection
-//     // mqtt_connack connack = pack_connack(arg);
-//     // mqtt_send(*(int *)client_socket, &connack);
-// }
-
-
-// void mqtt_handle_publish() {
-// }
-
-
-// void mqtt_handle_puback() {
-// }
-
-
-// void mqtt_handle_subscribe() {
-// }
-
-
-// void mqtt_handle_unsubscribe() {
-// }
-
-
-// void mqtt_handle_disconnect() {
-// }
-
 
 
 int main() {
@@ -160,7 +135,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    int server_socket, client_socket;
+    int server_socket;
     sockaddr_in address;
     int addr_len = sizeof(address);
 
@@ -180,15 +155,14 @@ int main() {
     while (keep_running) {
         pthread_t thread_id;
 
-        client_socket = accept(server_socket, (sockaddr *)&address, (socklen_t*)&addr_len);
-
+        int client_socket = accept(server_socket, (sockaddr *)&address, (socklen_t*)&addr_len);
         if (client_socket > 0) {
             printf("Established communication channel with client, waiting for CONNECT packet...\n");
             // Start a thread that handles client messages
             if (pthread_create(&thread_id, NULL, process_client_messages, &client_socket)) {
                 perror("Failed to start thread");
             } else { 
-                push(&threads, thread_id);
+                push(&threads, *(pthread_t *)thread_id);
             }
         }
         else {
@@ -196,7 +170,7 @@ int main() {
         }
     }
 
-    printf("Cleanup triggered!\n");
+    printf("Cleanup!\n");   // for debugging
     // Cleanup
     for (size_t i=0; i < threads.size; ++i) {
         pthread_join(((pthread_t *)threads.data)[i], NULL);

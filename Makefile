@@ -5,8 +5,8 @@ BIN_SERVER := mqtt_server
 BIN_CLIENT := test_client
 
 # Source files for server and client
-SRCS_SERVER := $(SRC_DIR)/mqtt_server.c $(SRC_DIR)/mqtt_com.c $(SRC_DIR)/mqtt_util.c
-SRCS_CLIENT := $(SRC_DIR)/test_client.c
+SRCS_SERVER := $(SRC_DIR)/mqtt_server.c $(SRC_DIR)/mqtt_parser.c $(SRC_DIR)/mqtt_util.c
+SRCS_CLIENT := $(SRC_DIR)/test_client.c $(SRC_DIR)/mqtt_parser.c
 
 # Object files
 OBJS_SERVER := $(SRCS_SERVER:.c=.o)
