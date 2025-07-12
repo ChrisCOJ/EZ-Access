@@ -16,8 +16,22 @@ OBJS_CLIENT := $(SRCS_CLIENT:.c=.o)
 CC := gcc
 CFLAGS := -I$(INC_DIR) -Wall -Wextra -pthread
 
-# Default target: build both
-all: $(BIN_SERVER) $(BIN_CLIENT)
+# Test files
+TEST_SRC := $(SRC_DIR)/mqtt_tests.c $(SRC_DIR)/mqtt_parser.c
+TEST_BIN := mqtt_tests
+TEST_OBJS := $(TEST_SRC:.c=.o)
+
+# Default target: run tests, then build
+all: test $(BIN_SERVER) $(BIN_CLIENT)
+
+# Test target
+test: $(TEST_BIN)
+	@echo "Running tests..."
+	@./$(TEST_BIN)
+
+# Build test binary
+$(TEST_BIN): $(TEST_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
 
 # Server build
 $(BIN_SERVER): $(OBJS_SERVER)
@@ -27,12 +41,12 @@ $(BIN_SERVER): $(OBJS_SERVER)
 $(BIN_CLIENT): $(OBJS_CLIENT)
 	$(CC) $(CFLAGS) -o $@ $^
 
-# Compile all .c to .o
+# Compile .c to .o
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean up
+# Clean
 clean:
-	rm -f $(SRC_DIR)/*.o $(BIN_SERVER) $(BIN_CLIENT)
+	rm -f $(SRC_DIR)/*.o $(BIN_SERVER) $(BIN_CLIENT) $(TEST_BIN)
 
-.PHONY: all clean
+.PHONY: all clean test

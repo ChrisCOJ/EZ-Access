@@ -151,6 +151,8 @@ packing_status finalize_packet(packing_status status, size_t remaining_len, uint
  */
 packing_status pack_connect(mqtt_connect *conn);
 
+packing_status pack_connack(mqtt_connack connack);
+
 /**
  * @brief Packs an MQTT PUBLISH packet into a binary buffer.
  *
@@ -176,6 +178,8 @@ packing_status pack_subscribe(mqtt_subscribe *sub);
  */
 packing_status pack_unsubscribe(mqtt_subscribe *unsub);
 
+packing_status pack_disconnect();
+
 /**
  * @brief Unpacks a CONNECT packet from the buffer into a mqtt_connect structure.
  *
@@ -186,6 +190,10 @@ packing_status pack_unsubscribe(mqtt_subscribe *unsub);
  * @return MQTT_CONNECT on success, or an error code on failure.
  */
 int unpack_connect(mqtt_connect *conn, uint8_t **buf, size_t buf_size, int accumulated_size);
+
+
+int unpack_connack(mqtt_connack *connack, uint8_t **buf, size_t buf_size, int accumulated_size);
+
 
 /**
  * @brief Unpacks a PUBLISH packet from the buffer into a mqtt_publish structure.

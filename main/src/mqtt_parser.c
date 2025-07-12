@@ -22,11 +22,11 @@ uint32_t decode_remaining_length(uint8_t **buf, int *accumulated_size) {
         ++(*buf);
         ++(*accumulated_size);
         value += (encoded_byte & 127) * multiplier;
-        multiplier *= 128;
         if (multiplier > (128 * 128 * 128)) {
             // Malformed Remaining Length (greater than 4 bytes)
             return 0xFFFFFFFF; // error
         }
+        multiplier *= 128;
     } while ((encoded_byte & 128) != 0);
 
     return value;
@@ -74,14 +74,14 @@ int unpack_uint16(uint8_t **buf, size_t buf_len, int *accumulated_size) {
 }
 
 int unpack_str(uint8_t **buf, char **str, uint16_t str_len, size_t buf_len, int *accumulated_size) {
-    if (*accumulated_size + str_len > buf_len) {
+    if ((*accumulated_size + str_len) > (int)buf_len) {
         return OUT_OF_BOUNDS;
     }
     *accumulated_size += str_len;
 
     *str = malloc(str_len + 1);
     if (!*str) return FAILED_MEM_ALLOC;
-    
+
     memcpy(*str, *buf, str_len);
     (*str)[str_len] = '\0';
     *buf += str_len;
@@ -103,6 +103,7 @@ int unpack_connect(mqtt_connect *conn, uint8_t **buf, size_t buf_size, int accum
     if (conn->protocol_level < 0) return OUT_OF_BOUNDS;
     // Connect flags
     conn->connect_flags = unpack_uint8(buf, buf_size, &accumulated_size);
+    if ((conn->connect_flags & 1) == 1) return MALFORMED_PACKET;   // LSB MUST be 0;
     if (conn->connect_flags < 0) return OUT_OF_BOUNDS;
     // Keep alive
     conn->keep_alive = unpack_uint16(buf, buf_size, &accumulated_size);
@@ -134,26 +135,43 @@ int unpack_connect(mqtt_connect *conn, uint8_t **buf, size_t buf_size, int accum
 }
 
 
+int unpack_connack(mqtt_connack *connack, uint8_t **buf, size_t buf_size, int accumulated_size) {
+    connack->session_present_flag = unpack_uint8(buf, buf_size, &accumulated_size);
+    if (connack->session_present_flag < 0) return OUT_OF_BOUNDS;
+    // Only the LSB in connack flags may be set
+    if ((connack->session_present_flag & 0b11111110) != 0) return MALFORMED_PACKET;
+
+    connack->return_code = unpack_uint8(buf, buf_size, &accumulated_size);
+    if (connack->return_code < 0) return OUT_OF_BOUNDS;
+
+    return MQTT_CONNACK;
+}
+
+
 int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, size_t buf_size, int accumulated_size) {
     int err;
+    int variable_header_size = 0;
 
     // Topic
     publish->topic_len = unpack_uint16(buf, buf_size, &accumulated_size);
     if (publish->topic_len < 0) return OUT_OF_BOUNDS;
+    variable_header_size += sizeof(uint16_t);
 
     err = unpack_str(buf, &publish->topic, publish->topic_len, buf_size, &accumulated_size);
     if (err) return err;
+    variable_header_size += publish->topic_len;
 
     // Packet ID
     if ((header.fixed_header & QOS_FLAG_MASK) != QOS_AMO_FLAG) {
         publish->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
         if (publish->pkt_id < 0) return OUT_OF_BOUNDS;
+        variable_header_size += sizeof(uint16_t);
     }
 
     // Payload
-    if (accumulated_size > header.remaining_length) return MALFORMED_PACKET;
+    if (variable_header_size > (int)header.remaining_length) return MALFORMED_PACKET;
 
-    publish->payload_len = header.remaining_length - accumulated_size;
+    publish->payload_len = header.remaining_length - variable_header_size;
     err = unpack_str(buf, &publish->payload, publish->payload_len, buf_size, &accumulated_size);
     if (err) return err;
 
@@ -170,7 +188,7 @@ int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, 
 
     // Payload
     int i = 0;
-    while (accumulated_size < buf_size) {
+    while (accumulated_size < (int)buf_size) {
         // Topic len
         void *tmp = realloc(subscribe->tuples, (i + 1) * sizeof(*subscribe->tuples));
         if (!tmp) return GENERIC_ERR;
@@ -202,7 +220,7 @@ int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_
     
     // Payload
     int i = 0;
-    while (accumulated_size < buf_size) {
+    while (accumulated_size < (int)buf_size) {
         // Allocate or grow the array of topic filter tuples
         // We need space for one more tuple (i + 1 total)
         // sizeof(*unsubscribe->tuples) ensures we allocate space for the actual struct, not just a pointer
@@ -238,6 +256,12 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
     switch (packet_type) {
         case CONNECT_TYPE: {
             return unpack_connect(&packet->type.connect, buf, buf_size, accumulated_size);
+        }
+
+        case CONNACK_TYPE: {
+            if ((packet->header.fixed_header & FLAG_MASK) != 0) return INCORRECT_FLAGS; 
+            if (packet->header.remaining_length != 2) return MALFORMED_PACKET;  // Connack has a fixed size of 2
+            return unpack_connack(&packet->type.connack, buf, buf_size, accumulated_size);
         }
 
         case PUBLISH_TYPE: {

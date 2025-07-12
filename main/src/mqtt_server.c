@@ -24,10 +24,32 @@ typedef struct sockaddr_in sockaddr_in;
 typedef struct sockaddr sockaddr;
 
 volatile sig_atomic_t keep_running = 1;
+vector client_list = {0};
 
 
 void handle_sigint() {
     keep_running = 0;
+}
+
+
+int mqtt_handle_connect(int client_socket, mqtt_connect connect) {
+    // Store session state for the current client
+    session_state client_session = {
+        .client_socket = client_socket,
+        .clean_session = (connect.connect_flags & CLEAN_SESSION_FLAG) == CLEAN_SESSION_FLAG,
+        .subscriptions = NULL,
+        .unaknowledged_message_ids = NULL,
+    };
+    client_session.client_id = malloc(strlen(connect.payload.client_id));
+    if (!client_session.client_id) {
+        perror("Failed client ID malloc when trying to update session state!");
+        return -1;
+    }
+    strcpy(client_session.client_id, connect.payload.client_id);
+
+    return 0;
+
+    // Pack and send connack
 }
 
 
@@ -67,13 +89,11 @@ void *process_client_messages(void *arg) {
         if (read_size > 0) {
             // Parse the message received from the client.
             int packet_type = unpack(&packet, &buffer, read_size);  // Reconstruct bytestream as mqtt_packet and store in packet
-
             if (msg_number == 0 && packet_type != MQTT_CONNECT) {
                 perror("Unexpected MQTT packet type. First packet MUST be MQTT_CONNECT, dropping connection...\n");
                 // drop_client(*(int *)client_socket);
                 exit(EXIT_FAILURE);
             }
-
             if (msg_number > 0 && packet_type == MQTT_CONNECT) {
                 perror("Duplicate MQTT_CONNECT packet detected, dropping connection...\n");
                 // drop_client(*(int *)client_socket);
@@ -82,13 +102,16 @@ void *process_client_messages(void *arg) {
 
             switch(packet_type) {
                 case MQTT_CONNECT: {
+                    // Validate connect
                     mqtt_connect con = packet.type.connect;
-                    printf("CONNECT packet received correctly\n");
                     timeout.tv_sec = con.keep_alive;
                     timeout.tv_usec = TIMEOUT_INTERVAL_USECONDS;
                     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
                     printf("Client ID = %s\n", con.payload.client_id);
-                    // mqtt_handle_connect(client_socket);
+
+                    if (mqtt_handle_connect(client_socket, con)) {
+                        return NULL;  // Terminate client connection
+                    }
                     break;
                 }
                 // case MQTT_PUBLISH:
