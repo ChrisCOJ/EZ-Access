@@ -1,15 +1,110 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <pthread.h>
 
 #include "../include/mqtt_protocol.h"
 #include "../include/mqtt_parser.h"
 
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 1883
+#define SERVER_IP                   "127.0.0.1"
+#define SERVER_PORT                 1883
+
+
+int subscribe_to_topic(char *sub_filter, int qos, uint16_t *packet_id, int socket) {
+    /* Function that allows subscription to a single topic */
+    uint16_t sub_filter_len = strlen(sub_filter);
+    mqtt_subscribe sub = {
+        .pkt_id = *packet_id,
+        .tuples = &(subscribe_tuples){ .topic = sub_filter, .topic_len = sub_filter_len, .qos = qos },
+        .tuples_len = 1,
+    };
+    ++(*packet_id);
+
+    packing_status packed = pack_subscribe(&sub);
+    if (packed.return_code < 0) {
+        printf("Packing subscribe failed with err code %d", packed.return_code);
+        return -1;
+    }    
+    ssize_t bytes_written = send(socket, (uint8_t *)packed.buf, packed.buf_len, 0);
+    if (bytes_written == -1) {
+        perror("Failed sending subscribe packet to broker");
+        return -1;
+    }
+    printf("Subscribe packet sent to broker succsessfully!");
+    return 0;
+}
+
+
+void *process_server_messages(void *arg) {
+    int socket = *(int *)arg;
+    free(arg);
+    int msg_number = 0;
+    uint16_t packet_id = 1;
+
+    while (1) {
+        mqtt_packet packet = {0};
+        uint8_t *original_buffer = malloc(DEFAULT_BUFF_SIZE);
+        if (!original_buffer) return NULL;
+        uint8_t *buffer = original_buffer;
+
+        int bytes_read = read(socket, buffer, DEFAULT_BUFF_SIZE);
+        if (bytes_read <= 0) {
+            printf("bytes read = %d", bytes_read);
+            perror("Failed receiving server message!");
+            free(original_buffer);
+            return NULL;
+        }
+
+        // Parse the message received from the client.
+        int packet_type = unpack(&packet, &buffer, bytes_read);  // Reconstruct bytestream as mqtt_packet and store in packet
+        if (msg_number == 0 && packet_type != MQTT_CONNACK) {
+            perror("Unexpected MQTT packet type. First packet from server MUST be MQTT_CONNACK, dropping connection...\n");
+            return NULL;
+        }
+        if (msg_number > 0 && packet_type == MQTT_CONNACK) {
+            perror("Duplicate MQTT_CONNACK packet detected, dropping connection...\n");
+            return NULL;
+        }
+
+        switch(packet_type) {
+            case MQTT_CONNACK: {
+                mqtt_connack connack = packet.type.connack;
+                if (connack.return_code != 0) {
+                    printf("Connection rejected by the broker, return code = %d", connack.return_code);
+                    return NULL;
+                }
+                printf("Received CONNACK correctly, connection with broker validated.");
+                
+                // Pack and send subscribe request
+                int ret = subscribe_to_topic("test/topic", 1, &packet_id, socket);
+                if (ret) return NULL;
+
+            }
+            case MQTT_PUBLISH: {
+                return NULL;
+            }
+            case MQTT_PUBACK: {
+                return NULL;
+            }
+            case MQTT_SUBACK: {
+                return NULL;
+            }
+            case MQTT_PINGRESP: {
+                return NULL;
+            }
+            default:
+                perror("Encountered error while parsing client message!\n");
+                break;
+        }
+        ++msg_number;
+        free(original_buffer);
+    }
+    return NULL;
+}
 
 
 int send_connect_packet(int socket) {
@@ -21,10 +116,6 @@ int send_connect_packet(int socket) {
         printf("Packing connect failed with err code %d", status.return_code);
     }
 
-    // for (int i = 0; i < status.buf_len; ++i) {
-    //     printf("%X\n", status.buf[i]);
-    // }
-
     ssize_t bytes_written = send(socket, (uint8_t *)status.buf, status.buf_len, 0);
     if (bytes_written  == -1) {
         perror("Send failed!");
@@ -35,6 +126,16 @@ int send_connect_packet(int socket) {
 
 void on_connect(int socket) {
     send_connect_packet(socket);
+
+    // Start a thread listening to mqtt broker messages
+    pthread_t thread_id;
+    int *socket_ptr = malloc(sizeof(int));
+    *socket_ptr = socket;
+    if (pthread_create(&thread_id, NULL, process_server_messages, socket_ptr)) {
+        perror("Failed to start thread");
+    }
+
+    pthread_join(thread_id, NULL);
 }
 
 

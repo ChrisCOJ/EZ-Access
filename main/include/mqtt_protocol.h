@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 
+#define DEFAULT_BUFF_SIZE       1024
 #define HEADER_SIZE             2
 
 /* First byte in the fixed header represents the type of message */
@@ -47,6 +48,13 @@
 #define SUB_UNSUB_FLAGS         0x02
 /* Disconnect constant flags */
 #define DISCONNECT_FLAGS        0x00
+
+/* Connack return codes */
+#define CONNACK_UNACCEPTABLE_PROTOCOL_VERSION       0x01
+#define CONNACK_ID_REJECTED                         0x02
+#define CONNACK_SERVER_UNAVAILABLE                  0x03
+#define CONNACK_BAD_USERNAME_OR_PASSWORD            0x04
+#define CONNACK_NOT_AUTHORIZED                      0x05
 
 /* Connect flags */
 #define CLEAN_SESSION_FLAG      (1 << 1)    
@@ -110,23 +118,27 @@ typedef struct {
 
 
 typedef struct {
-    uint16_t pkt_id;
-    uint16_t tuples_len;
-    struct {
-        char *topic;
-        uint16_t topic_len;
-        unsigned qos;
-    } *tuples;
-} mqtt_subscribe;
-
+    char *topic;
+    uint16_t topic_len;
+    unsigned qos;
+} subscribe_tuples;
 
 typedef struct {
     uint16_t pkt_id;
     uint16_t tuples_len;
-    struct {
-        uint16_t topic_len;
-        char *topic;
-    } *tuples;
+    subscribe_tuples *tuples;
+} mqtt_subscribe;
+
+
+typedef struct {
+    char *topic;
+    uint16_t topic_len;
+} unsubscribe_tuples;
+
+typedef struct {
+    uint16_t pkt_id;
+    uint16_t tuples_len;
+    unsubscribe_tuples *tuples;
 } mqtt_unsubscribe;
 
 
@@ -153,9 +165,9 @@ typedef struct {
 
 /* The rest of message types have the same structure as mqtt_ack or mqtt_header */
 typedef mqtt_ack mqtt_puback;
-typedef mqtt_ack mqtt_pubrec;
-typedef mqtt_ack mqtt_pubrel;
-typedef mqtt_ack mqtt_pubcomp;
+// typedef mqtt_ack mqtt_pubrec;
+// typedef mqtt_ack mqtt_pubrel;
+// typedef mqtt_ack mqtt_pubcomp;
 typedef mqtt_ack mqtt_unsuback;
 
 
@@ -169,7 +181,6 @@ typedef struct {
         mqtt_subscribe subscribe;
         mqtt_suback suback;
         mqtt_unsubscribe unsubscribe;
-        mqtt_ack ack;
     } type;
 } mqtt_packet;
 

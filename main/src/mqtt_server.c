@@ -15,8 +15,8 @@
 #include "../include/mqtt_util.h"
 
 
-#define PORT 1883
-#define BACKLOG 5
+#define PORT                        1883
+#define BACKLOG                     5
 #define TIMEOUT_INTERVAL_SECONDS    20      // The client socket will timeout following this interval before a CONNECT (keep alive) packet is sent
 #define TIMEOUT_INTERVAL_USECONDS   0       // Time interval in microseconds
 
@@ -47,23 +47,31 @@ int mqtt_handle_connect(int client_socket, mqtt_connect connect) {
     }
     strcpy(client_session.client_id, connect.payload.client_id);
 
-    return 0;
+    /* Pack and send connack */
+    mqtt_connack connack = {
+        .session_present_flag = 0,
+        .return_code = 0,
+    };
+    // Return code
+    if (connect.protocol_level != 4) connack.return_code = CONNACK_UNACCEPTABLE_PROTOCOL_VERSION; 
+    // If ID is taken, set return code to CONNACK_ID_REJECTED
 
-    // Pack and send connack
+    packing_status packed = pack_connack(connack);
+    if (packed.return_code < 0) {
+        printf("Packing connack failed with err code %d", packed.return_code);
+        return -1;
+    }
+    ssize_t bytes_written = send(client_socket, (uint8_t *)packed.buf, packed.buf_len, 0);
+    if (bytes_written  == -1) {
+        perror("Send failed!");
+        return -1;
+    }
+    return 0;
 }
 
 
 void *process_client_messages(void *arg) {
-    /*
-    Params: client_socket is an integer file descriptor that represents a specific client/server socket connection.
-    */
-
-    /*
-    The first message that is expected from the client once communication is established is an MQTT CONNECT control packet.
-    Any other initial message will result in the client network connection being dropped.
-    A unique client must only send one CONNECT packet throghout its connection lifetime. Any duplicate CONNECT packets will
-    result in the client network connection being dropped.
-    */
+    // client_socket is an integer file descriptor that represents a specific client/server socket connection.
     int client_socket = *(int *)arg;
 
     // Set an initial appropriate client timeout before the keep alive parameter is set via the CONNECT packet
@@ -77,10 +85,11 @@ void *process_client_messages(void *arg) {
 
     while (connection_alive) {
         mqtt_packet packet = {0};
-        uint8_t *buffer = malloc(1024);
-        if (!buffer) exit(EXIT_FAILURE);
+        uint8_t *original_buffer = malloc(DEFAULT_BUFF_SIZE);
+        if (!original_buffer) exit(EXIT_FAILURE);
+        uint8_t *buffer = original_buffer;
         
-        int read_size = read(client_socket, buffer, 1024);  // The size in bytes of the message read from the client socket
+        int read_size = read(client_socket, buffer, DEFAULT_BUFF_SIZE);  // The size in bytes of the message read from the client socket
         printf("Buffer Size = %d\n", read_size);
         for (int i = 0; i < read_size; ++i) {
             printf("%02X\n", buffer[i]);
@@ -102,7 +111,6 @@ void *process_client_messages(void *arg) {
 
             switch(packet_type) {
                 case MQTT_CONNECT: {
-                    // Validate connect
                     mqtt_connect con = packet.type.connect;
                     timeout.tv_sec = con.keep_alive;
                     timeout.tv_usec = TIMEOUT_INTERVAL_USECONDS;
@@ -114,21 +122,19 @@ void *process_client_messages(void *arg) {
                     }
                     break;
                 }
-                // case MQTT_PUBLISH:
-                //     mqtt_handle_publish();
-                //     break;
-                // case MQTT_PUBACK:
-                //     mqtt_handle_puback();
-                //     break;
-                // case MQTT_SUBSCRIBE:
-                //     mqtt_handle_subscribe();
-                //     break;
-                // case MQTT_UNSUBSCRIBE:
-                //     mqtt_handle_unsubscribe();
-                //     break;
-                // case MQTT_DISCONNECT:
-                //     mqtt_handle_disconnect();
-                //     break;
+                case MQTT_PUBLISH:
+                    break;
+                case MQTT_PUBACK:
+                    break;
+                case MQTT_SUBSCRIBE:
+
+                    break;
+                case MQTT_UNSUBSCRIBE:
+                    break;
+                case MQTT_PINGREQ: 
+                    break;
+                case MQTT_DISCONNECT:
+                    break;
                 
                 default:
                     perror("Encountered error while parsing client message!\n");
@@ -138,9 +144,9 @@ void *process_client_messages(void *arg) {
         }
         else {
             connection_alive = false;
-            close(client_socket);
             printf("Client connection terminated!\n");
         }
+        free(original_buffer);
     }   
     return NULL;
 };
@@ -148,7 +154,7 @@ void *process_client_messages(void *arg) {
 
 int main() {
     vector threads = {
-        .capacity = 10,     // Assign some initial capacity for client connections
+        .capacity = 10,  // Assign some initial capacity for client connections
         .size = 0,
         .data = malloc(threads.capacity * sizeof(pthread_t)),
         .item_size = sizeof(pthread_t)
@@ -193,7 +199,7 @@ int main() {
         }
     }
 
-    printf("Cleanup!\n");   // for debugging
+    printf("Cleanup!\n");
     // Cleanup
     for (size_t i=0; i < threads.size; ++i) {
         pthread_join(((pthread_t *)threads.data)[i], NULL);

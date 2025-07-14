@@ -164,6 +164,7 @@ int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, siz
     // Packet ID
     if ((header.fixed_header & QOS_FLAG_MASK) != QOS_AMO_FLAG) {
         publish->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
+        if (publish->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
         if (publish->pkt_id < 0) return OUT_OF_BOUNDS;
         variable_header_size += sizeof(uint16_t);
     }
@@ -184,6 +185,7 @@ int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, 
 
     // Packet ID
     subscribe->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (subscribe->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
     if (subscribe->pkt_id < 0) return OUT_OF_BOUNDS;
 
     // Payload
@@ -204,9 +206,11 @@ int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, 
         // Topic qos
         subscribe->tuples[i].qos = unpack_uint8(buf, buf_size, &accumulated_size);
         if (subscribe->tuples[i].qos < 0) return OUT_OF_BOUNDS;
+        if (subscribe->tuples[i].qos > 1) return QOS_LEVEL_NOT_SUPPORTED;
         ++i;
     }
     subscribe->tuples_len = i;
+    if (subscribe->tuples_len == 0) return MALFORMED_PACKET;
     return MQTT_SUBSCRIBE;
 }
 
@@ -216,6 +220,7 @@ int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_
 
     // Packet ID
     unsubscribe->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (unsubscribe->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
     if (unsubscribe->pkt_id < 0) return OUT_OF_BOUNDS;
     
     // Payload
@@ -239,6 +244,7 @@ int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_
         ++i;
     }
     unsubscribe->tuples_len = i;
+    if (unsubscribe->tuples_len == 0) return MALFORMED_PACKET;
     return MQTT_UNSUBSCRIBE;
 }
 

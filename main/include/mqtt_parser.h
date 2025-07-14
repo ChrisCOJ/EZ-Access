@@ -30,6 +30,8 @@ enum return_codes {
     FAILED_MEM_ALLOC        = -4,
     INVALID_PACKET_TYPE     = -5,
     OUT_OF_BOUNDS           = -6,
+    QOS_LEVEL_NOT_SUPPORTED = -7,
+    PACKET_ID_NOT_ALLOWED   = -8,
 };
 
 
