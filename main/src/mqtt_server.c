@@ -23,8 +23,25 @@
 typedef struct sockaddr_in sockaddr_in;
 typedef struct sockaddr sockaddr;
 
-volatile sig_atomic_t keep_running = 1;
-vector client_list = {0};
+typedef struct { 
+    char *client_id;
+    int client_socket;
+    vector subscriptions;    // list of subscriptions
+    int *unaknowledged_message_ids;
+    bool clean_session;
+    int return_code;
+} session_state;
+
+typedef struct {
+    char *name;
+    vector associated_clients;
+} subscription_instance;
+
+/****************************************************************************************************************************/
+
+static volatile sig_atomic_t keep_running = 1;
+static volatile vector session_list = {.item_size = sizeof(session_state)};
+static volatile vector subscription_list = {.item_size = sizeof(subscription_instance)};
 
 
 void handle_sigint() {
@@ -32,20 +49,103 @@ void handle_sigint() {
 }
 
 
-int mqtt_handle_connect(int client_socket, mqtt_connect connect) {
-    // Store session state for the current client
+bool is_client_subscribed(char *client_id, subscription_instance subscription) {
+    for (int n = 0; n < subscription.associated_clients.size; ++n) {
+        char *client_n_id = (char *)subscription.associated_clients.data + n;
+        if (client_n_id == client_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+void match_topic(subscribe_tuples topic_filter, session_state *current_client_session) {
+    int i = 0;
+    bool matched_subscription = false;
+    do {
+        subscription_instance *existing_subscription = (subscription_instance *)subscription_list.data + i;
+        // If topic exists and client is subscribed already, replace subscription
+        if (!strcmp(topic_filter.topic, existing_subscription->name) && 
+            is_client_subscribed(current_client_session->client_id, *existing_subscription)) {
+            matched_subscription = true;
+            for (int j = 0; j < current_client_session->subscriptions.size; ++j) {
+                subscribe_tuples *client_sub = (subscribe_tuples *)current_client_session->subscriptions.data + j;
+                if (strcmp(client_sub->topic, topic_filter.topic)) {
+                    *client_sub = topic_filter;
+                }
+            }
+        }
+        // If topic_filter matches and the client is not already subscribed, subscribe the client to the topic
+        else if (!strcmp(topic_filter.topic, existing_subscription->name) && 
+                 !is_client_subscribed(current_client_session->client_id, *existing_subscription)) {
+            matched_subscription = true;
+            // Add client name to the appropriate subscription inside the global subscription list
+            push(&existing_subscription->associated_clients, &current_client_session->client_id);
+            // Add subscription to the client's session subscription list
+            push(&current_client_session->subscriptions, &topic_filter);
+        }
+        ++i;
+    } while (i < subscription_list.size);
+
+    if (!matched_subscription) {
+        // If topic doesn't already exist, add it and subscribe the client
+        subscription_instance subscription_inst = {
+            .name = topic_filter.topic,
+            .associated_clients.item_size = sizeof(char *),
+        };
+        push(&subscription_inst, &current_client_session->client_id);
+        push(&subscription_list, &subscription_inst);
+
+        current_client_session->subscriptions.item_size = sizeof(subscribe_tuples);
+        push(&current_client_session->subscriptions, &topic_filter);
+    }
+}
+
+
+void mqtt_handle_subscribe(mqtt_subscribe sub, int socket, session_state *current_client_session) {
+    // Compare topic filters against existing topics.
+    for (int i = 0; i < sub.tuples_len; ++i) {
+        match_topic(sub.tuples[i], current_client_session);
+        // Pack and send suback
+        mqtt_suback suback = {
+            .pkt_id = sub.pkt_id,
+            .return_code = sub.tuples[i].qos,
+        };
+        packing_status packed = pack_suback(suback);
+        if (packed.return_code < 0) {
+            printf("Packing suback failed with err code %d", packed.return_code);
+        }
+        ssize_t bytes_written = send(socket, (uint8_t *)packed.buf, packed.buf_len, 0);
+        if (bytes_written  == -1) {
+            perror("Send failed!");
+        }
+    }
+
+}
+
+
+session_state mqtt_handle_connect(int client_socket, mqtt_connect connect) {
+    /* Store session state for the current client */
+    // Dynamic array of client subscriptions
+    vector topic_list = {
+        .item_size = sizeof(subscribe_tuples),
+    };
     session_state client_session = {
         .client_socket = client_socket,
         .clean_session = (connect.connect_flags & CLEAN_SESSION_FLAG) == CLEAN_SESSION_FLAG,
-        .subscriptions = NULL,
+        .subscriptions = &topic_list,
         .unaknowledged_message_ids = NULL,
+        .return_code = 0,
     };
     client_session.client_id = malloc(strlen(connect.payload.client_id));
     if (!client_session.client_id) {
         perror("Failed client ID malloc when trying to update session state!");
-        return -1;
+        client_session.return_code = -1;
+        return client_session;
     }
     strcpy(client_session.client_id, connect.payload.client_id);
+    push(session_list.data, &client_session);
 
     /* Pack and send connack */
     mqtt_connack connack = {
@@ -59,20 +159,24 @@ int mqtt_handle_connect(int client_socket, mqtt_connect connect) {
     packing_status packed = pack_connack(connack);
     if (packed.return_code < 0) {
         printf("Packing connack failed with err code %d", packed.return_code);
-        return -1;
+        client_session.return_code = -1;
+        return client_session;
     }
+
     ssize_t bytes_written = send(client_socket, (uint8_t *)packed.buf, packed.buf_len, 0);
     if (bytes_written  == -1) {
         perror("Send failed!");
-        return -1;
+        client_session.return_code = -1;
+        return client_session;
     }
-    return 0;
+    return client_session;
 }
 
 
 void *process_client_messages(void *arg) {
     // client_socket is an integer file descriptor that represents a specific client/server socket connection.
     int client_socket = *(int *)arg;
+    session_state client_session = {0};
 
     // Set an initial appropriate client timeout before the keep alive parameter is set via the CONNECT packet
     struct timeval timeout;
@@ -117,7 +221,8 @@ void *process_client_messages(void *arg) {
                     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
                     printf("Client ID = %s\n", con.payload.client_id);
 
-                    if (mqtt_handle_connect(client_socket, con)) {
+                    client_session = mqtt_handle_connect(client_socket, con);
+                    if (client_session.return_code < 0) {
                         return NULL;  // Terminate client connection
                     }
                     break;
@@ -127,7 +232,8 @@ void *process_client_messages(void *arg) {
                 case MQTT_PUBACK:
                     break;
                 case MQTT_SUBSCRIBE:
-
+                    mqtt_subscribe sub = packet.type.subscribe;
+                    mqtt_handle_subscribe(sub, client_socket, &client_session);
                     break;
                 case MQTT_UNSUBSCRIBE:
                     break;

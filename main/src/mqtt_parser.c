@@ -162,7 +162,7 @@ int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, siz
     variable_header_size += publish->topic_len;
 
     // Packet ID
-    if ((header.fixed_header & QOS_FLAG_MASK) != QOS_AMO_FLAG) {
+    if ((header.fixed_header & QOS_FLAG_MASK) != QOS_0) {
         publish->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
         if (publish->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
         if (publish->pkt_id < 0) return OUT_OF_BOUNDS;
@@ -213,6 +213,23 @@ int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, 
     if (subscribe->tuples_len == 0) return MALFORMED_PACKET;
     return MQTT_SUBSCRIBE;
 }
+
+
+int unpack_suback(mqtt_suback *suback, uint8_t **buf, size_t buf_size, int accumulated_size) {
+    // Unpack pkt_id
+    suback->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (suback->pkt_id < 0) return OUT_OF_BOUNDS;
+
+    // Unpack return code
+    suback->return_code = unpack_uint8(buf, buf_size, &accumulated_size);
+    uint8_t rc = suback->return_code;
+    if (rc < 0) return OUT_OF_BOUNDS;
+    if (rc != QOS_0 && rc != QOS_1 && rc != QOS_2 && rc != SUBACK_FAIL) {
+        return MALFORMED_PACKET;
+    }
+    return MQTT_SUBACK;
+}
+
 
 
 int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_size, int accumulated_size) {
@@ -275,10 +292,9 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
         }
 
         case PUBACK_TYPE: {
-            if (packet->header.remaining_length >= 2) {
-                packet->type.puback.pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
-                if (packet->type.puback.pkt_id < 0) return OUT_OF_BOUNDS;
-            }
+            if (packet->header.remaining_length != 2) return MALFORMED_PACKET;
+            packet->type.puback.pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
+            if (packet->type.puback.pkt_id < 0) return OUT_OF_BOUNDS;
             return MQTT_PUBACK;
         }
 
@@ -287,6 +303,10 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
                 return INCORRECT_FLAGS;
             }
             return unpack_subscribe(&packet->type.subscribe, buf, buf_size, accumulated_size);
+        }
+
+        case SUBACK_TYPE: {
+            return unpack_suback(&packet->type.suback, buf, buf_size, accumulated_size);
         }
 
         case UNSUBSCRIBE_TYPE: {
@@ -474,6 +494,26 @@ packing_status pack_publish(mqtt_publish *pub, uint8_t flags) {
 }
 
 
+packing_status pack_puback(mqtt_puback puback) {
+    packing_status status = {
+        .buf = NULL,
+        .buf_len = 0,
+        .return_code = 0,
+    };
+
+    /* --- Sanity checks --- */
+    CHECK(!puback.pkt_id, MALFORMED_PACKET, status.return_code);
+    if (status.return_code) return status;
+
+    // Pack packet ID
+    CHECK(pack16(&status.buf, &status.buf_len, puback.pkt_id), FAILED_MEM_ALLOC, status.return_code);
+
+    /* --- Add the fixed header at the start --- */
+    uint8_t header_byte = PUBACK_TYPE;  // Flags: 0
+    return finalize_packet(status, status.buf_len, header_byte);
+}
+
+
 packing_status pack_subscribe(mqtt_subscribe *sub) {
     packing_status status = {
         .buf = NULL,
@@ -504,6 +544,29 @@ packing_status pack_subscribe(mqtt_subscribe *sub) {
 
     /* --- Add the fixed header at the start --- */
     uint8_t header_byte = SUBSCRIBE_TYPE | SUB_UNSUB_FLAGS;
+    return finalize_packet(status, status.buf_len, header_byte);
+}
+
+
+packing_status pack_suback(mqtt_suback suback) {
+    packing_status status = {
+        .buf = NULL,
+        .buf_len = 0,
+        .return_code = 0,
+    };
+
+    /* --- Sanity checks --- */
+    CHECK(!suback.pkt_id, MALFORMED_PACKET, status.return_code);
+    CHECK(suback.return_code, MALFORMED_PACKET, status.return_code);
+    if (status.return_code) return status;
+
+    // Pack packet ID
+    CHECK(pack16(&status.buf, &status.buf_len, suback.pkt_id), FAILED_MEM_ALLOC, status.return_code);
+    // Pack return code
+    CHECK(pack8(&status.buf, &status.buf_len, suback.return_code), FAILED_MEM_ALLOC, status.return_code);
+
+    /* --- Add the fixed header at the start --- */
+    uint8_t header_byte = SUBACK_TYPE;  // Flags: 0
     return finalize_packet(status, status.buf_len, header_byte);
 }
 

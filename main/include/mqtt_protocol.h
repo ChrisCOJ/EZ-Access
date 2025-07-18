@@ -39,13 +39,19 @@
 /* Publish flags */
 #define RETAIN_FLAG             (1 << 0)
 #define QOS_FLAG_MASK           0b00000110
-#define QOS_AMO_FLAG            0x00            // At most once
-#define QOS_ALO_FLAG            (1 << 1)        // At least once
-#define QOS_EO_FLAG             (1 << 2)        // Exactly once
 #define DUP_FLAG                (1 << 3)
+
+/* QOS */
+#define QOS_0                   0x00            // At most once
+#define QOS_1                   (1 << 1)        // At least once
+#define QOS_2                   (1 << 2)        // Exactly once
 
 /* Subscribe/Unsubscribe constant flags */
 #define SUB_UNSUB_FLAGS         0x02
+
+/* Suback */
+#define SUBACK_FAIL             0x80
+
 /* Disconnect constant flags */
 #define DISCONNECT_FLAGS        0x00
 
@@ -120,7 +126,7 @@ typedef struct {
 typedef struct {
     char *topic;
     uint16_t topic_len;
-    unsigned qos;
+    uint8_t qos;
 } subscribe_tuples;
 
 typedef struct {
@@ -144,8 +150,7 @@ typedef struct {
 
 typedef struct {
     uint16_t  pkt_id;
-    uint16_t rcs_len;
-    uint8_t *rcs;
+    uint8_t return_code;
 } mqtt_suback;
 
 

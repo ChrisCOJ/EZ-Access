@@ -9,17 +9,20 @@
 
 #include "../include/mqtt_protocol.h"
 #include "../include/mqtt_parser.h"
+#include "../include/mqtt_util.h"
 
 #define SERVER_IP                   "127.0.0.1"
 #define SERVER_PORT                 1883
 
 
-int subscribe_to_topic(char *sub_filter, int qos, uint16_t *packet_id, int socket) {
-    /* Function that allows subscription to a single topic */
-    uint16_t sub_filter_len = strlen(sub_filter);
+int subscribe_to_topic(subscribe_tuples subscription, uint16_t *packet_id, int socket) {
+    /* 
+    Function that allows subscription to a single topic 
+    */
+
     mqtt_subscribe sub = {
         .pkt_id = *packet_id,
-        .tuples = &(subscribe_tuples){ .topic = sub_filter, .topic_len = sub_filter_len, .qos = qos },
+        .tuples = &subscription,
         .tuples_len = 1,
     };
     ++(*packet_id);
@@ -39,11 +42,31 @@ int subscribe_to_topic(char *sub_filter, int qos, uint16_t *packet_id, int socke
 }
 
 
+int send_connect_packet(int socket) {
+    char *client_id = "Test Client";
+    mqtt_connect conn = default_init_connect(client_id, strlen(client_id));
+
+    packing_status status = pack_connect(&conn);
+    if (status.return_code < 0) {
+        printf("Packing connect failed with err code %d", status.return_code);
+    }
+
+    ssize_t bytes_written = send(socket, (uint8_t *)status.buf, status.buf_len, 0);
+    if (bytes_written  == -1) {
+        perror("Send failed!");
+    }
+    return 0;
+}
+
+
 void *process_server_messages(void *arg) {
     int socket = *(int *)arg;
     free(arg);
     int msg_number = 0;
     uint16_t packet_id = 1;
+    vector subscriptions = {
+        .item_size = sizeof(subscribe_tuples),
+    };
 
     while (1) {
         mqtt_packet packet = {0};
@@ -80,8 +103,16 @@ void *process_server_messages(void *arg) {
                 printf("Received CONNACK correctly, connection with broker validated.");
                 
                 // Pack and send subscribe request
-                int ret = subscribe_to_topic("test/topic", 1, &packet_id, socket);
+                char *topic_name = "test/topic";
+                subscribe_tuples subscription_inst = {
+                    .topic = topic_name,
+                    .qos = 1,
+                    .topic_len = strlen(topic_name),
+                };
+                int ret = subscribe_to_topic(subscription_inst, &packet_id, socket);
                 if (ret) return NULL;
+                // Store the subscription instance in a list of client subscriptions
+                push(&subscriptions, &subscription_inst);
 
             }
             case MQTT_PUBLISH: {
@@ -104,23 +135,6 @@ void *process_server_messages(void *arg) {
         free(original_buffer);
     }
     return NULL;
-}
-
-
-int send_connect_packet(int socket) {
-    char *client_id = "Test Client";
-    mqtt_connect conn = default_init_connect(client_id, strlen(client_id));
-
-    packing_status status = pack_connect(&conn);
-    if (status.return_code < 0) {
-        printf("Packing connect failed with err code %d", status.return_code);
-    }
-
-    ssize_t bytes_written = send(socket, (uint8_t *)status.buf, status.buf_len, 0);
-    if (bytes_written  == -1) {
-        perror("Send failed!");
-    }
-    return 0;
 }
 
 

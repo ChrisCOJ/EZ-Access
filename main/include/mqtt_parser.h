@@ -165,12 +165,22 @@ packing_status pack_connack(mqtt_connack connack);
 packing_status pack_publish(mqtt_publish *pub, uint8_t flags);
 
 /**
+ * 
+ */
+packing_status pack_puback(mqtt_puback puback);
+
+/**
  * @brief Packs an MQTT SUBSCRIBE packet into a binary buffer.
  *
  * @param[in] sub Pointer to the subscribe structure containing topic filters and QoS levels.
  * @return packing_status struct containing the final packet buffer, its length and error code (0 = success, otherwise failure).
  */
 packing_status pack_subscribe(mqtt_subscribe *sub);
+
+/**
+ * 
+ */
+packing_status pack_suback(mqtt_suback suback);
 
 /**
  * @brief Packs an MQTT UNSUBSCRIBE packet into a binary buffer.
@@ -180,6 +190,9 @@ packing_status pack_subscribe(mqtt_subscribe *sub);
  */
 packing_status pack_unsubscribe(mqtt_subscribe *unsub);
 
+/**
+ * 
+ */
 packing_status pack_disconnect();
 
 /**
@@ -219,6 +232,11 @@ int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, siz
  * @return MQTT_SUBSCRIBE on success, or an error code on failure.
  */
 int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, int accumulated_size);
+
+/**
+ * 
+ */
+int unpack_suback(mqtt_suback *suback, uint8_t **buf, size_t buf_size, int accumulated_size);
 
 /**
  * @brief Unpacks an UNSUBSCRIBE packet from the buffer into a mqtt_unsubscribe structure.
