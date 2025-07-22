@@ -29,7 +29,7 @@ int subscribe_to_topic(subscribe_tuples subscription, uint16_t *packet_id, int s
 
     packing_status packed = pack_subscribe(&sub);
     if (packed.return_code < 0) {
-        printf("Packing subscribe failed with err code %d", packed.return_code);
+        printf("Packing subscribe failed with err code %d\n", packed.return_code);
         return -1;
     }    
     ssize_t bytes_written = send(socket, (uint8_t *)packed.buf, packed.buf_len, 0);
@@ -37,7 +37,7 @@ int subscribe_to_topic(subscribe_tuples subscription, uint16_t *packet_id, int s
         perror("Failed sending subscribe packet to broker");
         return -1;
     }
-    printf("Subscribe packet sent to broker succsessfully!");
+    printf("Subscribe packet sent to broker succsessfully!\n");
     return 0;
 }
 
@@ -48,7 +48,7 @@ int send_connect_packet(int socket) {
 
     packing_status status = pack_connect(&conn);
     if (status.return_code < 0) {
-        printf("Packing connect failed with err code %d", status.return_code);
+        printf("Packing connect failed with err code %d\n", status.return_code);
     }
 
     ssize_t bytes_written = send(socket, (uint8_t *)status.buf, status.buf_len, 0);
@@ -76,14 +76,19 @@ void *process_server_messages(void *arg) {
 
         int bytes_read = read(socket, buffer, DEFAULT_BUFF_SIZE);
         if (bytes_read <= 0) {
-            printf("bytes read = %d", bytes_read);
-            perror("Failed receiving server message!");
+            printf("bytes read = %d\n", bytes_read);
+            perror("Server communication channel closed!");
             free(original_buffer);
             return NULL;
+        }
+        printf("Buffer Size = %d\n", bytes_read);
+        for (int i = 0; i < bytes_read; ++i) {
+            printf("%02X\n", buffer[i]);
         }
 
         // Parse the message received from the client.
         int packet_type = unpack(&packet, &buffer, bytes_read);  // Reconstruct bytestream as mqtt_packet and store in packet
+        printf("PACKET TYPE = %d\n", packet_type);
         if (msg_number == 0 && packet_type != MQTT_CONNACK) {
             perror("Unexpected MQTT packet type. First packet from server MUST be MQTT_CONNACK, dropping connection...\n");
             return NULL;
@@ -97,10 +102,10 @@ void *process_server_messages(void *arg) {
             case MQTT_CONNACK: {
                 mqtt_connack connack = packet.type.connack;
                 if (connack.return_code != 0) {
-                    printf("Connection rejected by the broker, return code = %d", connack.return_code);
+                    printf("Connection rejected by the broker, return code = %d\n", connack.return_code);
                     return NULL;
                 }
-                printf("Received CONNACK correctly, connection with broker validated.");
+                printf("Received CONNACK correctly, connection with broker validated.\n");
                 
                 // Pack and send subscribe request
                 char *topic_name = "test/topic";
@@ -113,22 +118,26 @@ void *process_server_messages(void *arg) {
                 if (ret) return NULL;
                 // Store the subscription instance in a list of client subscriptions
                 push(&subscriptions, &subscription_inst);
-
+                break;
             }
             case MQTT_PUBLISH: {
-                return NULL;
+                break;
             }
             case MQTT_PUBACK: {
-                return NULL;
+                break;
             }
             case MQTT_SUBACK: {
-                return NULL;
+                mqtt_suback suback = packet.type.suback;
+                for (int i = 0; i < suback.rc_len; ++i) {
+                    printf("Suback%d return code = %02X\n", i, suback.return_codes[i]);
+                }
+                break;
             }
             case MQTT_PINGRESP: {
-                return NULL;
+                break;
             }
             default:
-                perror("Encountered error while parsing client message!\n");
+                perror("Encountered error while parsing server message!\n");
                 break;
         }
         ++msg_number;

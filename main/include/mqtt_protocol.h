@@ -42,9 +42,9 @@
 #define DUP_FLAG                (1 << 3)
 
 /* QOS */
-#define QOS_0                   0x00            // At most once
-#define QOS_1                   (1 << 1)        // At least once
-#define QOS_2                   (1 << 2)        // Exactly once
+#define QOS_0                   0               // At most once
+#define QOS_1                   1               // At least once
+#define QOS_2                   (1 << 1)        // Exactly once
 
 /* Subscribe/Unsubscribe constant flags */
 #define SUB_UNSUB_FLAGS         0x02
@@ -127,6 +127,7 @@ typedef struct {
     char *topic;
     uint16_t topic_len;
     uint8_t qos;
+    uint8_t suback_status;
 } subscribe_tuples;
 
 typedef struct {
@@ -150,7 +151,8 @@ typedef struct {
 
 typedef struct {
     uint16_t  pkt_id;
-    uint8_t return_code;
+    uint8_t *return_codes;
+    uint16_t rc_len;
 } mqtt_suback;
 
 

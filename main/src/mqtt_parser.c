@@ -90,45 +90,56 @@ int unpack_str(uint8_t **buf, char **str, uint16_t str_len, size_t buf_len, int 
 
 
 int unpack_connect(mqtt_connect *conn, uint8_t **buf, size_t buf_size, int accumulated_size) {
-    int err;
+    int rc;
 
     // Protocol name length
-    conn->protocol_name.len = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (conn->protocol_name.len < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    conn->protocol_name.len = (uint16_t)rc;
     // Protocol name
-    err = unpack_str(buf, &conn->protocol_name.name, conn->protocol_name.len, buf_size, &accumulated_size);
-    if (err) return err;
+    rc = unpack_str(buf, &conn->protocol_name.name, conn->protocol_name.len, buf_size, &accumulated_size);
+    if (rc) return rc;
     // Protocol level
-    conn->protocol_level = unpack_uint8(buf, buf_size, &accumulated_size);
-    if (conn->protocol_level < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint8(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    conn->protocol_level = (uint8_t)rc;
     // Connect flags
-    conn->connect_flags = unpack_uint8(buf, buf_size, &accumulated_size);
-    if ((conn->connect_flags & 1) == 1) return MALFORMED_PACKET;   // LSB MUST be 0;
-    if (conn->connect_flags < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint8(buf, buf_size, &accumulated_size);
+    if ((rc & 1) == 1) return MALFORMED_PACKET;   // LSB MUST be 0;
+    if (rc < 0) return OUT_OF_BOUNDS;
+    conn->connect_flags = (uint8_t)rc;
     // Keep alive
-    conn->keep_alive = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (conn->keep_alive < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    conn->keep_alive = (uint16_t)rc;
     // Client ID
-    conn->payload.client_id_len = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (conn->payload.client_id_len < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    conn->payload.client_id_len = (uint16_t)rc;
     
-    err = unpack_str(buf, &conn->payload.client_id, conn->payload.client_id_len, buf_size, &accumulated_size);
-    if (err) return err;
+    rc = unpack_str(buf, &conn->payload.client_id, conn->payload.client_id_len, buf_size, &accumulated_size);
+    if (rc) return rc;
 
     // Will
     if ((conn->connect_flags & WILL_FLAG) == WILL_FLAG) {  // if will flag is set
-        conn->payload.will_topic_len = unpack_uint16(buf, buf_size, &accumulated_size);
-        if (conn->payload.will_topic_len < 0) return OUT_OF_BOUNDS;
+        // Will topic length
+        rc = unpack_uint16(buf, buf_size, &accumulated_size);
+        if (rc < 0) return OUT_OF_BOUNDS;
+        conn->payload.will_topic_len = (uint16_t)rc;
+        // Will topic name
         if (conn->payload.will_topic_len) {
-            err = unpack_str(buf, &conn->payload.will_topic, conn->payload.will_topic_len, buf_size, &accumulated_size);
-            if (err) return err;
+            rc = unpack_str(buf, &conn->payload.will_topic, conn->payload.will_topic_len, buf_size, &accumulated_size);
+            if (rc) return rc;
         }
 
-        conn->payload.will_message_len = unpack_uint16(buf, buf_size, &accumulated_size);
-        if (conn->payload.will_message_len < 0) return OUT_OF_BOUNDS;
+        // Will message length
+        rc = unpack_uint16(buf, buf_size, &accumulated_size);
+        if (rc < 0) return OUT_OF_BOUNDS;
+        conn->payload.will_message_len = (uint16_t)rc;
+        // Will message
         if (conn->payload.will_message_len) {
-            err = unpack_str(buf, &conn->payload.will_message, conn->payload.will_message_len, buf_size, &accumulated_size);
-            if (err) return err;
+            rc = unpack_str(buf, &conn->payload.will_message, conn->payload.will_message_len, buf_size, &accumulated_size);
+            if (rc) return rc;
         }
     }
     return MQTT_CONNECT;
@@ -136,36 +147,44 @@ int unpack_connect(mqtt_connect *conn, uint8_t **buf, size_t buf_size, int accum
 
 
 int unpack_connack(mqtt_connack *connack, uint8_t **buf, size_t buf_size, int accumulated_size) {
-    connack->session_present_flag = unpack_uint8(buf, buf_size, &accumulated_size);
-    if (connack->session_present_flag < 0) return OUT_OF_BOUNDS;
-    // Only the LSB in connack flags may be set
-    if ((connack->session_present_flag & 0b11111110) != 0) return MALFORMED_PACKET;
+    int rc;
 
-    connack->return_code = unpack_uint8(buf, buf_size, &accumulated_size);
-    if (connack->return_code < 0) return OUT_OF_BOUNDS;
+    // Connack flags
+    rc = unpack_uint8(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    // Only the LSB in connack flags may be set
+    if ((rc & 0b11111110) != 0) return MALFORMED_PACKET;
+    connack->session_present_flag = (uint8_t)rc;
+
+    // Connack return code
+    rc = unpack_uint8(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    connack->return_code = (uint8_t)rc;
 
     return MQTT_CONNACK;
 }
 
 
 int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, size_t buf_size, int accumulated_size) {
-    int err;
+    int rc;
     int variable_header_size = 0;
 
-    // Topic
-    publish->topic_len = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (publish->topic_len < 0) return OUT_OF_BOUNDS;
+    // Topic length
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (rc < 0) return OUT_OF_BOUNDS;
+    publish->topic_len = (uint16_t)rc;
     variable_header_size += sizeof(uint16_t);
-
-    err = unpack_str(buf, &publish->topic, publish->topic_len, buf_size, &accumulated_size);
-    if (err) return err;
+    // Topic name
+    rc = unpack_str(buf, &publish->topic, publish->topic_len, buf_size, &accumulated_size);
+    if (rc) return rc;
     variable_header_size += publish->topic_len;
 
     // Packet ID
     if ((header.fixed_header & QOS_FLAG_MASK) != QOS_0) {
-        publish->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
-        if (publish->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
-        if (publish->pkt_id < 0) return OUT_OF_BOUNDS;
+        rc = unpack_uint16(buf, buf_size, &accumulated_size);
+        if (rc == 0) return PACKET_ID_NOT_ALLOWED;
+        if (rc < 0) return OUT_OF_BOUNDS;
+        publish->pkt_id = (uint16_t)rc;
         variable_header_size += sizeof(uint16_t);
     }
 
@@ -173,40 +192,60 @@ int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, siz
     if (variable_header_size > (int)header.remaining_length) return MALFORMED_PACKET;
 
     publish->payload_len = header.remaining_length - variable_header_size;
-    err = unpack_str(buf, &publish->payload, publish->payload_len, buf_size, &accumulated_size);
-    if (err) return err;
+    rc = unpack_str(buf, &publish->payload, publish->payload_len, buf_size, &accumulated_size);
+    if (rc) return rc;
 
     return MQTT_PUBLISH;
 }
 
 
 int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, int accumulated_size) {
-    int err;
+    int rc;
+    int subscribe_global_failure = 0;  // Flag set in case of global subscribe packet failures
 
     // Packet ID
-    subscribe->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (subscribe->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
-    if (subscribe->pkt_id < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (rc <= 0) subscribe_global_failure = 1;
+    subscribe->pkt_id = (uint16_t)rc;
 
     // Payload
     int i = 0;
     while (accumulated_size < (int)buf_size) {
+        if (subscribe_global_failure) {
+            subscribe->tuples[i].suback_status = SUBACK_FAIL;
+            continue;
+        }
         // Topic len
         void *tmp = realloc(subscribe->tuples, (i + 1) * sizeof(*subscribe->tuples));
-        if (!tmp) return GENERIC_ERR;
+        if (!tmp) {
+            subscribe->tuples[i].suback_status = SUBACK_FAIL;
+            continue;
+        }
         subscribe->tuples = tmp;
-        subscribe->tuples[i].topic_len = unpack_uint16(buf, buf_size, &accumulated_size);
-        if (subscribe->tuples[i].topic_len < 0) return OUT_OF_BOUNDS;
-        if (subscribe->tuples[i].topic_len == 0) return MALFORMED_PACKET;
+        rc = unpack_uint16(buf, buf_size, &accumulated_size);
+        if (rc <= 0) {
+            subscribe->tuples[i].suback_status = SUBACK_FAIL;
+            continue;
+        }
+        subscribe->tuples[i].topic_len = (uint16_t)rc;
 
         // Topic name
-        err = unpack_str(buf, &subscribe->tuples[i].topic, subscribe->tuples[i].topic_len, buf_size, &accumulated_size);
-        if (err) return err;
-
+        rc = unpack_str(buf, &subscribe->tuples[i].topic, subscribe->tuples[i].topic_len, buf_size, &accumulated_size);
+        if (rc) {
+            subscribe->tuples[i].suback_status = SUBACK_FAIL;
+            continue;
+        }
         // Topic qos
-        subscribe->tuples[i].qos = unpack_uint8(buf, buf_size, &accumulated_size);
-        if (subscribe->tuples[i].qos < 0) return OUT_OF_BOUNDS;
-        if (subscribe->tuples[i].qos > 1) return QOS_LEVEL_NOT_SUPPORTED;
+        rc = unpack_uint8(buf, buf_size, &accumulated_size);
+        if ((rc < 0) || (rc > 1)) {
+            subscribe->tuples[i].suback_status = SUBACK_FAIL;
+            continue;
+        }
+        subscribe->tuples[i].qos = (uint8_t)rc;
+        // Final return status for the individual subscription is its requested qos
+        if (subscribe->tuples[i].suback_status != SUBACK_FAIL) {
+            subscribe->tuples[i].suback_status = subscribe->tuples[i].qos;
+        }
         ++i;
     }
     subscribe->tuples_len = i;
@@ -216,16 +255,26 @@ int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, 
 
 
 int unpack_suback(mqtt_suback *suback, uint8_t **buf, size_t buf_size, int accumulated_size) {
-    // Unpack pkt_id
-    suback->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (suback->pkt_id < 0) return OUT_OF_BOUNDS;
+    int rc;
 
-    // Unpack return code
-    suback->return_code = unpack_uint8(buf, buf_size, &accumulated_size);
-    uint8_t rc = suback->return_code;
+    // Packet ID
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
     if (rc < 0) return OUT_OF_BOUNDS;
-    if (rc != QOS_0 && rc != QOS_1 && rc != QOS_2 && rc != SUBACK_FAIL) {
-        return MALFORMED_PACKET;
+    suback->pkt_id = (uint16_t)rc;
+
+    // Return codes
+    suback->rc_len = (uint16_t)buf_size - (uint16_t)accumulated_size;
+    if (suback->rc_len <= 0) return MALFORMED_PACKET;
+    suback->return_codes = malloc(suback->rc_len);
+    int i = 0;
+    while (i < suback->rc_len) {
+        rc = unpack_uint8(buf, buf_size, &accumulated_size);
+        if (rc < 0) return OUT_OF_BOUNDS;
+        if (rc != QOS_0 && rc != QOS_1 && rc != QOS_2 && rc != SUBACK_FAIL) {
+            return MALFORMED_PACKET;
+        }
+        suback->return_codes[i] = (uint8_t)rc;
+        ++i;
     }
     return MQTT_SUBACK;
 }
@@ -233,12 +282,13 @@ int unpack_suback(mqtt_suback *suback, uint8_t **buf, size_t buf_size, int accum
 
 
 int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_size, int accumulated_size) {
-    int err;
+    int rc;
 
     // Packet ID
-    unsubscribe->pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
-    if (unsubscribe->pkt_id == 0) return PACKET_ID_NOT_ALLOWED;
-    if (unsubscribe->pkt_id < 0) return OUT_OF_BOUNDS;
+    rc = unpack_uint16(buf, buf_size, &accumulated_size);
+    if (rc == 0) return PACKET_ID_NOT_ALLOWED;
+    if (rc < 0) return OUT_OF_BOUNDS;
+    unsubscribe->pkt_id = (uint16_t)rc;
     
     // Payload
     int i = 0;
@@ -251,13 +301,14 @@ int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_
         unsubscribe->tuples = tmp;
 
         // Topic len
-        unsubscribe->tuples[i].topic_len = unpack_uint16(buf, buf_size, &accumulated_size);
-        if (unsubscribe->tuples[i].topic_len < 0) return OUT_OF_BOUNDS;
-        if (unsubscribe->tuples[i].topic_len == 0) return MALFORMED_PACKET;
+        rc = unpack_uint16(buf, buf_size, &accumulated_size);
+        if (rc < 0) return OUT_OF_BOUNDS;
+        if (rc == 0) return MALFORMED_PACKET;
+        unsubscribe->tuples[i].topic_len = (uint16_t)rc;
 
         // Topic name
-        err = unpack_str(buf, &unsubscribe->tuples[i].topic, unsubscribe->tuples[i].topic_len, buf_size, &accumulated_size);
-        if (err) return err;
+        rc = unpack_str(buf, &unsubscribe->tuples[i].topic, unsubscribe->tuples[i].topic_len, buf_size, &accumulated_size);
+        if (rc) return rc;
         ++i;
     }
     unsubscribe->tuples_len = i;
@@ -293,8 +344,9 @@ int unpack(mqtt_packet *packet, uint8_t **buf, size_t buf_size){
 
         case PUBACK_TYPE: {
             if (packet->header.remaining_length != 2) return MALFORMED_PACKET;
-            packet->type.puback.pkt_id = unpack_uint16(buf, buf_size, &accumulated_size);
-            if (packet->type.puback.pkt_id < 0) return OUT_OF_BOUNDS;
+            int rc = unpack_uint16(buf, buf_size, &accumulated_size);
+            if (rc < 0) return OUT_OF_BOUNDS;
+            packet->type.puback.pkt_id = (uint16_t)rc;
             return MQTT_PUBACK;
         }
 
@@ -557,13 +609,15 @@ packing_status pack_suback(mqtt_suback suback) {
 
     /* --- Sanity checks --- */
     CHECK(!suback.pkt_id, MALFORMED_PACKET, status.return_code);
-    CHECK(suback.return_code, MALFORMED_PACKET, status.return_code);
+    CHECK(!suback.rc_len, MALFORMED_PACKET, status.return_code);
     if (status.return_code) return status;
 
     // Pack packet ID
     CHECK(pack16(&status.buf, &status.buf_len, suback.pkt_id), FAILED_MEM_ALLOC, status.return_code);
-    // Pack return code
-    CHECK(pack8(&status.buf, &status.buf_len, suback.return_code), FAILED_MEM_ALLOC, status.return_code);
+    // Pack return codes
+    for (int i = 0; i < suback.rc_len; ++i) {
+        CHECK(pack8(&status.buf, &status.buf_len, suback.return_codes[i]), FAILED_MEM_ALLOC, status.return_code);
+    }
 
     /* --- Add the fixed header at the start --- */
     uint8_t header_byte = SUBACK_TYPE;  // Flags: 0

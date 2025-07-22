@@ -6,7 +6,7 @@ BIN_CLIENT := test_client
 
 # Source files for server and client
 SRCS_SERVER := $(SRC_DIR)/mqtt_server.c $(SRC_DIR)/mqtt_parser.c $(SRC_DIR)/mqtt_util.c
-SRCS_CLIENT := $(SRC_DIR)/test_client.c $(SRC_DIR)/mqtt_parser.c
+SRCS_CLIENT := $(SRC_DIR)/test_client.c $(SRC_DIR)/mqtt_parser.c $(SRC_DIR)/mqtt_util.c
 
 # Object files
 OBJS_SERVER := $(SRCS_SERVER:.c=.o)
@@ -14,7 +14,7 @@ OBJS_CLIENT := $(SRCS_CLIENT:.c=.o)
 
 # Compiler and flags
 CC := gcc
-CFLAGS := -I$(INC_DIR) -Wall -Wextra -pthread
+CFLAGS := -I$(INC_DIR) -Wall -Wextra -g -pthread
 
 # Test files
 TEST_SRC := $(SRC_DIR)/mqtt_tests.c $(SRC_DIR)/mqtt_parser.c

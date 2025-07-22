@@ -67,7 +67,7 @@ void test_pack_unpack_publish() {
         .payload_len = 5,
     };
 
-    packing_status packed = pack_publish(&pub, QOS_ALO_FLAG);  // QoS 1
+    packing_status packed = pack_publish(&pub, QOS_1);
     ASSERT_VERBOSE_INT(packed.return_code, 0);
 
     mqtt_packet pkt = {0};
