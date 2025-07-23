@@ -67,16 +67,17 @@ void test_pack_unpack_publish() {
         .payload_len = 5,
     };
 
-    packing_status packed = pack_publish(&pub, QOS_1);
+    packing_status packed = pack_publish(&pub, PUBLISH_QOS_1);
     ASSERT_VERBOSE_INT(packed.return_code, 0);
 
     mqtt_packet pkt = {0};
     uint8_t *ptr = packed.buf;
     int result = unpack(&pkt, &ptr, packed.buf_len);
+    printf("%d, %s, %s\n", pkt.type.publish.pkt_id, pkt.type.publish.payload, pkt.type.publish.topic);
     ASSERT_VERBOSE_INT(result, MQTT_PUBLISH);
     ASSERT_VERBOSE_INT(pkt.type.publish.pkt_id, 42);
-    ASSERT_VERBOSE_INT(strcmp(pkt.type.publish.topic, "topic"), 0);
     ASSERT_VERBOSE_INT(strcmp(pkt.type.publish.payload, "hello"), 0);
+    ASSERT_VERBOSE_INT(strcmp(pkt.type.publish.topic, "topic"), 0);
 
     free_packet(&pkt);
     free(packed.buf);

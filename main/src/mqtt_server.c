@@ -37,6 +37,12 @@ typedef struct {
     vector associated_clients;
 } subscription_instance;
 
+typedef struct {
+    bool subscription_exists;
+    bool is_client_subscribed;
+    subscription_instance *sub_inst;
+} sub_match;
+
 /****************************************************************************************************************************/
 
 static vector session_list = {.item_size = sizeof(session_state)};
@@ -47,8 +53,8 @@ static pthread_mutex_t subscription_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 bool is_client_subscribed(char *client_id, subscription_instance subscription) {
     for (int n = 0; n < (int)subscription.associated_clients.size; ++n) {
-        char *client_n_id = (char *)subscription.associated_clients.data + n;
-        if (client_n_id == client_id) {
+        session_state *client_n_session = ((session_state *)subscription.associated_clients.data) + n;
+        if (client_n_session->client_id == client_id) {
             return true;
         }
     }
@@ -56,61 +62,38 @@ bool is_client_subscribed(char *client_id, subscription_instance subscription) {
 }
 
 
-void match_topic(subscribe_tuples topic_filter, session_state *current_client_session) {
+sub_match match_topic(char *topic_filter, session_state *current_client_session) {
     int i = 0;
-    bool matched_subscription = false;
+    sub_match matched_subscription = { 
+        .is_client_subscribed = false,
+        .subscription_exists = false,
+        .sub_inst = NULL,
+    };
 
     pthread_mutex_lock(&subscription_list_lock);
     if (subscription_list.data != NULL && subscription_list.size > 0) {
         do {
-            subscription_instance *existing_subscription = (subscription_instance *)subscription_list.data + i;
-            pthread_mutex_lock(&session_list_lock);
-            // If topic exists and client is subscribed already, replace subscription
-            if (!strcmp(topic_filter.topic, existing_subscription->name) && 
-                is_client_subscribed(current_client_session->client_id, *existing_subscription)) {
-                printf("here2\n");
-                matched_subscription = true;
-                for (int j = 0; j < (int)current_client_session->subscriptions.size; ++j) {
-                    subscribe_tuples *client_sub = (subscribe_tuples *)current_client_session->subscriptions.data + j;
-                    if (strcmp(client_sub->topic, topic_filter.topic)) {
-                        *client_sub = topic_filter;
-                    }
+            subscription_instance *existing_subscription = ((subscription_instance *)subscription_list.data) + i;
+            // If topic exists, set subscription_exists flag and add the subscription instance to the return struct
+            if (!strcmp(topic_filter, existing_subscription->name)) {
+                matched_subscription.subscription_exists = true;
+                matched_subscription.sub_inst = existing_subscription;
+                pthread_mutex_lock(&session_list_lock);
+                // If client is already subscribed, set is_client_subscribed flag
+                if (is_client_subscribed(current_client_session->client_id, *existing_subscription)) {
+                    matched_subscription.is_client_subscribed = true;
+                    pthread_mutex_unlock(&session_list_lock);
                 }
-                pthread_mutex_unlock(&session_list_lock);
-            }
-
-            // If topic_filter matches and the client is not already subscribed, subscribe the client to the topic
-            else if (!strcmp(topic_filter.topic, existing_subscription->name) && 
-                    !is_client_subscribed(current_client_session->client_id, *existing_subscription)) {
-                matched_subscription = true;
-                // Add client name to the appropriate subscription inside the global subscription list
-                push(&existing_subscription->associated_clients, &current_client_session->client_id);
-                // Add subscription to the client's session subscription list
-                push(&current_client_session->subscriptions, &topic_filter);
-                pthread_mutex_unlock(&session_list_lock);
+                // Early return if the topic filter has been matched
+                pthread_mutex_unlock(&subscription_list_lock);
+                return matched_subscription;
             }
             ++i;
         } while (i < (int)subscription_list.size);
     }
     pthread_mutex_unlock(&subscription_list_lock);
-
-
-    if (!matched_subscription) {
-        // If topic doesn't already exist, add it and subscribe the client
-        subscription_instance subscription_inst = {
-            .name = topic_filter.topic,
-            .associated_clients.item_size = sizeof(char *),
-        };
-        pthread_mutex_lock(&session_list_lock);
-        pthread_mutex_lock(&subscription_list_lock);
-        push(&subscription_inst.associated_clients, &current_client_session->client_id);
-        push(&subscription_list, &subscription_inst);
-
-        current_client_session->subscriptions.item_size = sizeof(subscribe_tuples);
-        push(&current_client_session->subscriptions, &topic_filter);
-        pthread_mutex_unlock(&subscription_list_lock);
-        pthread_mutex_unlock(&session_list_lock);
-    }
+    // Return default sub_match struct if topic filter hasn't been matched
+    return matched_subscription;
 }
 
 
@@ -120,13 +103,57 @@ void mqtt_handle_subscribe(mqtt_subscribe sub, int socket, session_state *curren
         .pkt_id = sub.pkt_id,
         .rc_len = sub.tuples_len,
     };
-    suback.return_codes = malloc(suback.rc_len);
+    suback.return_codes = malloc(suback.rc_len * sizeof(uint16_t));
     if (!suback.return_codes) exit(EXIT_FAILURE);
 
     // Compare topic filters against existing topics and update subscriptions.
     for (int i = 0; i < sub.tuples_len; ++i) {
         suback.return_codes[i] = sub.tuples[i].suback_status;
-        match_topic(sub.tuples[i], current_client_session);
+        sub_match matched_subscription = match_topic(sub.tuples[i].topic, current_client_session);
+        // Add subscription to the client session's subscription list
+        subscribe_tuples subscribe_prop = {
+            .qos = sub.tuples[i].qos,
+            .topic = strdup(sub.tuples[i].topic),
+        };
+
+        if (matched_subscription.subscription_exists && matched_subscription.is_client_subscribed) {
+            // Replace subscription in client session
+            pthread_mutex_lock(&session_list_lock);
+            for (int j = 0; j < (int)current_client_session->subscriptions.size; ++j) {
+                subscribe_tuples *client_sub = ((subscribe_tuples *)current_client_session->subscriptions.data) + j;
+                if (!strcmp(client_sub->topic, sub.tuples[i].topic)) {
+                    *client_sub = sub.tuples[i];
+                }
+            }
+            pthread_mutex_unlock(&session_list_lock);
+        } 
+        else if (matched_subscription.subscription_exists && !matched_subscription.is_client_subscribed) {
+            // Add client session to the list of subscribers associated with the topic filter
+            pthread_mutex_lock(&subscription_list_lock);
+            push(&matched_subscription.sub_inst->associated_clients, current_client_session);
+            pthread_mutex_unlock(&subscription_list_lock);
+
+            pthread_mutex_lock(&session_list_lock);
+            push(&current_client_session->subscriptions, &subscribe_prop);
+            pthread_mutex_unlock(&session_list_lock);
+        }
+        else {
+            vector associated_clients = { .item_size = sizeof(session_state) };
+            subscription_instance subscription_inst = {
+                .name = strdup(sub.tuples[i].topic),
+                .associated_clients = associated_clients,
+            };
+            
+            pthread_mutex_lock(&subscription_list_lock);
+            pthread_mutex_lock(&session_list_lock);
+            push(&subscription_inst.associated_clients, current_client_session);
+            push(&subscription_list, &subscription_inst);
+
+            current_client_session->subscriptions.item_size = sizeof(subscribe_tuples);
+            push(&current_client_session->subscriptions, &subscribe_prop);
+            pthread_mutex_unlock(&session_list_lock);
+            pthread_mutex_unlock(&subscription_list_lock);
+        }
     }
 
     // Pack and send suback with return codes for each attempted subscription
@@ -143,13 +170,52 @@ void mqtt_handle_subscribe(mqtt_subscribe sub, int socket, session_state *curren
 }
 
 
+void mqtt_handle_publish(mqtt_publish pub, uint8_t pub_flags, session_state *current_client_session) {
+    // Match topic filter to existing subscriptions
+    sub_match matched_subscription = match_topic(pub.topic, current_client_session);
+
+    if (!matched_subscription.subscription_exists) {
+        perror("Publish packet received correctly but the topic filter has not matched an existing subscription. Packet dropped...");
+        return;
+    }
+
+    // If subscription exists, pack publish again without any changes
+    packing_status packed_pub = pack_publish(&pub, pub_flags);
+    if (packed_pub.return_code < 0) {
+        printf("Packing publish failed with err code %d", packed_pub.return_code);
+    }
+    // Send publish to all subscribers to this topic filter.
+    for (int i = 0; i < (int)matched_subscription.sub_inst->associated_clients.size; ++i) {
+        session_state *subscriber = ((session_state *)matched_subscription.sub_inst->associated_clients.data) + i;
+        printf("SOCKET = %d\n", subscriber->client_socket);
+        ssize_t bytes_written = send(subscriber->client_socket, (uint8_t *)packed_pub.buf, packed_pub.buf_len, 0);
+        if (bytes_written == -1) {
+            printf("Send publish failed!");
+        }
+    }
+    // Pack and send puback to the client who originally sent the public packet to the broker.
+    mqtt_puback puback = {
+        .pkt_id = pub.pkt_id,
+    };
+    packing_status packed_puback = pack_puback(puback);
+    if (packed_puback.return_code < 0) {
+        printf("Packing puback failed with err code %d", packed_puback.return_code);
+    }
+    ssize_t bytes_written = send(current_client_session->client_socket, (uint8_t *)packed_puback.buf, packed_puback.buf_len, 0);
+    if (bytes_written == -1) {
+        perror("Send puback failed!");
+    }
+}
+
+
 session_state mqtt_handle_connect(int client_socket, mqtt_connect connect) {
     /* Store session state for the current client */
     // Dynamic array of client subscriptions
+    vector sub = { .item_size = sizeof(subscribe_tuples) };
     session_state client_session = {
         .client_socket = client_socket,
         .clean_session = (connect.connect_flags & CLEAN_SESSION_FLAG) == CLEAN_SESSION_FLAG,
-        .subscriptions = { .item_size = sizeof(subscribe_tuples) },
+        .subscriptions = sub,
         .unaknowledged_message_ids = NULL,
         .return_code = 0,
     };
@@ -242,21 +308,30 @@ void *process_client_messages(void *arg) {
                     }
                     break;
                 }
-                case MQTT_PUBLISH:
+                case MQTT_PUBLISH: {
+                    mqtt_publish pub = packet.type.publish;
+                    mqtt_handle_publish(pub, packet.header.fixed_header & FLAG_MASK, &client_session);
                     break;
-                case MQTT_PUBACK:
+                }
+                case MQTT_PUBACK: {
+                    mqtt_puback puback = packet.type.puback;
+                    printf("Puback packet ID: %d", puback.pkt_id);
                     break;
+                }
                 case MQTT_SUBSCRIBE: {
                     mqtt_subscribe sub = packet.type.subscribe;
                     mqtt_handle_subscribe(sub, client_socket, &client_session);
+                    break;
                 }
+                case MQTT_UNSUBSCRIBE:{
                     break;
-                case MQTT_UNSUBSCRIBE:
+                }
+                case MQTT_PINGREQ: {
                     break;
-                case MQTT_PINGREQ: 
+                }
+                case MQTT_DISCONNECT: {
                     break;
-                case MQTT_DISCONNECT:
-                    break;
+                }
                 
                 default:
                     perror("Encountered error while parsing client message!\n");

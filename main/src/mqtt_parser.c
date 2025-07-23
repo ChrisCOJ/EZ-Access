@@ -180,7 +180,7 @@ int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, siz
     variable_header_size += publish->topic_len;
 
     // Packet ID
-    if ((header.fixed_header & QOS_FLAG_MASK) != QOS_0) {
+    if ((header.fixed_header & PUBLISH_QOS_FLAG_MASK) != PUBLISH_QOS_0) {
         rc = unpack_uint16(buf, buf_size, &accumulated_size);
         if (rc == 0) return PACKET_ID_NOT_ALLOWED;
         if (rc < 0) return OUT_OF_BOUNDS;

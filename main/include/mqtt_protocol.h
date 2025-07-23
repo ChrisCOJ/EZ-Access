@@ -37,9 +37,12 @@
 #define FLAG_MASK               0x0F
 
 /* Publish flags */
-#define RETAIN_FLAG             (1 << 0)
-#define QOS_FLAG_MASK           0b00000110
-#define DUP_FLAG                (1 << 3)
+#define PUBLISH_RETAIN_FLAG     (1 << 0)
+#define PUBLISH_QOS_FLAG_MASK   0b00000110
+#define PUBLISH_DUP_FLAG        (1 << 3)
+#define PUBLISH_QOS_0           0
+#define PUBLISH_QOS_1           (1 << 1)
+#define PUBLISH_QOS_2           (1 << 2)
 
 /* QOS */
 #define QOS_0                   0               // At most once
