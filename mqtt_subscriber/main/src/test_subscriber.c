@@ -10,22 +10,10 @@
 #include "../include/mqtt_protocol.h"
 #include "../include/mqtt_parser.h"
 #include "../include/mqtt_util.h"
+#include "../include/mqtt_client_api.h"
 
 #define SERVER_IP                   "127.0.0.1"
 #define SERVER_PORT                 1883
-#define MAX_COMMAND_NUM             10          // App enforces a maximum number of 10 possible commands for each subscription
-
-
-typedef struct {
-    char *command_name;
-    void (*callback)(void *);
-} command_table;
-
-typedef struct {
-    subscribe_tuples sub_properties;
-    command_table commands[MAX_COMMAND_NUM];
-    size_t command_count;
-} app_subscription_entry;
 
 
 void turn_led_on(void *context) {
@@ -34,94 +22,6 @@ void turn_led_on(void *context) {
 
 void turn_led_off(void *context) {
     printf("off\n");
-}
-
-
-app_subscription_entry match_topic(char *topic_filter, vector subscription_list) {
-    for (int i = 0; i < subscription_list.size; ++i) {
-        app_subscription_entry *sub_entry = (app_subscription_entry *)subscription_list.data + i;
-        if (!strcmp(sub_entry->sub_properties.topic, topic_filter)) {
-            return *sub_entry;
-        }
-    }
-    // Return empty struct on failure
-    app_subscription_entry fail_ret = {0};
-    return fail_ret;
-}
-
-
-int handle_publish(mqtt_publish pub, vector subscription_list, int sock) {
-    app_subscription_entry ret_sub_entry = match_topic(pub.topic, subscription_list);
-    if (ret_sub_entry.sub_properties.topic == NULL) {   // If empty (topic must have a value)
-        perror("Topic name attempting to publish to doesn't exist!");
-        return -1;
-    }
-    // Match payload to allowed commands for the particular subscription
-    for (int i = 0; i < ret_sub_entry.command_count; ++i) {
-        if (!strcmp(pub.payload, ret_sub_entry.commands[i].command_name)) {
-            ret_sub_entry.commands[i].callback(NULL);   // Invoke callback if command is validated
-        }
-    }
-
-    // Pack and send puback to broker
-    mqtt_puback puback = {
-        .pkt_id = pub.pkt_id,
-    };
-    packing_status packed = pack_puback(puback);
-    if (packed.return_code < 0) {
-        printf("Packing puback failed with err code %d", packed.return_code);
-        return -1;
-    }
-    ssize_t bytes_written = send(sock, (uint8_t *)packed.buf, packed.buf_len, 0);
-    if (bytes_written == -1) {
-        perror("Send failed!");
-        return -1;
-    }
-    return 0;
-}
-
-
-int subscribe_to_topic(subscribe_tuples subscription, uint16_t *packet_id, int sock) {
-    /* 
-    Function that allows subscription to a single topic 
-    */
-
-    mqtt_subscribe sub = {
-        .pkt_id = *packet_id,
-        .tuples = &subscription,
-        .tuples_len = 1,
-    };
-    ++(*packet_id);
-
-    packing_status packed = pack_subscribe(&sub);
-    if (packed.return_code < 0) {
-        printf("Packing subscribe failed with err code %d\n", packed.return_code);
-        return -1;
-    }    
-    ssize_t bytes_written = send(sock, (uint8_t *)packed.buf, packed.buf_len, 0);
-    if (bytes_written == -1) {
-        perror("Failed sending subscribe packet to broker");
-        return -1;
-    }
-    printf("Subscribe packet sent to broker succsessfully!\n");
-    return 0;
-}
-
-
-int send_connect_packet(int sock) {
-    char *client_id = "Subscriber";
-    mqtt_connect conn = default_init_connect(client_id, strlen(client_id));
-
-    packing_status status = pack_connect(&conn);
-    if (status.return_code < 0) {
-        printf("Packing connect failed with err code %d\n", status.return_code);
-    }
-
-    ssize_t bytes_written = send(sock, (uint8_t *)status.buf, status.buf_len, 0);
-    if (bytes_written  == -1) {
-        perror("Send failed!");
-    }
-    return 0;
 }
 
 
@@ -183,14 +83,14 @@ void process_server_messages(int sock, vector *subscriptions) {
                     },
                     .command_count = 2,
                 };
-                int ret = subscribe_to_topic(sub_properties, &packet_id, sock);
+                int ret = mqtt_client_subscribe_to_topic(sub_properties, &packet_id, sock);
                 if (ret) return;
                 push(subscriptions, &sub_entry);
                 break;
             }
             case MQTT_PUBLISH: {
                 mqtt_publish pub = packet.type.publish;
-                int err = handle_publish(pub, *subscriptions, sock);
+                int err = mqtt_client_handle_publish(pub, *subscriptions, sock);
                 if (err) return;
                 break;
             }
@@ -216,7 +116,6 @@ void process_server_messages(int sock, vector *subscriptions) {
         ++msg_number;
         free(original_buffer);
     }
-    return;
 }
 
 
@@ -251,6 +150,6 @@ int main() {
     }
     printf("Connected to MQTT server.\n");
 
-    send_connect_packet(sock);
+    mqtt_client_send_connect_packet(sock);
     process_server_messages(sock, &subscriptions);
 }

@@ -10,7 +10,8 @@
     "__bit_reference": "c",
     "__split_buffer": "c",
     "vector": "c",
-    "cstdint": "c"
+    "cstdint": "c",
+    "mqtt_protocol.h": "c"
   },
 
   "makefile.configureOnOpen": false,
