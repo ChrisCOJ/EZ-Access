@@ -1,59 +1,55 @@
 # Directories
-SRC_DIR := main/src
-INC_DIR := main/include
-BIN_SERVER := mqtt_server
-BIN_SUBSCRIBER_CLIENT := test_subscriber
-BIN_PUBLISHER_CLIENT := test_publisher
+SRC_DIR = main/src
+INC_DIR = main/include
+BUILD_DIR = ../build
 
-# Source files for server and client
-SRCS_SERVER := $(SRC_DIR)/mqtt_server.c $(SRC_DIR)/mqtt_parser.c $(SRC_DIR)/mqtt_util.c
-SRCS_SUBSCRIBER_CLIENT := $(SRC_DIR)/test_subscriber.c $(SRC_DIR)/mqtt_parser.c $(SRC_DIR)/mqtt_util.c
-SRCS_PUBLISHER_CLIENT := $(SRC_DIR)/test_publisher.c $(SRC_DIR)/mqtt_parser.c $(SRC_DIR)/mqtt_util.c
+# Tools
+CC = gcc
+AR = ar
+ARFLAGS = rcs
 
-# Object files
-OBJS_SERVER := $(SRCS_SERVER:.c=.o)
-OBJS_SUBSCRIBER_CLIENT := $(SRCS_SUBSCRIBER_CLIENT:.c=.o)
-OBJS_PUBLISHER_CLIENT := $(SRCS_PUBLISHER_CLIENT:.c=.o)
+# Library name
+LIB_NAME = libmqtt_protocol.a
+LIB_PATH = $(BUILD_DIR)/$(LIB_NAME)
 
-# Compiler and flags
-CC := gcc
-CFLAGS := -I$(INC_DIR) -Wall -Wextra -g -pthread
+# List your source files manually
+SOURCES = \
+    $(SRC_DIR)/mqtt_client_api.c \
+    $(SRC_DIR)/mqtt_parser.c \
+    $(SRC_DIR)/mqtt_util.c
 
-# Test files
-TEST_SRC := $(SRC_DIR)/mqtt_tests.c $(SRC_DIR)/mqtt_parser.c
-TEST_BIN := mqtt_tests
-TEST_OBJS := $(TEST_SRC:.c=.o)
+# Corresponding object files
+OBJECTS = \
+    $(BUILD_DIR)/mqtt_client_api.o \
+    $(BUILD_DIR)/mqtt_parser.o \
+    $(BUILD_DIR)/mqtt_util.o
 
-# Default target: run tests, then build
-all: test $(BIN_SERVER) $(BIN_SUBSCRIBER_CLIENT) $(BIN_PUBLISHER_CLIENT)
+# Compiler flags
+CFLAGS = -I$(INC_DIR) -Wall -Wextra -O2
 
-# Test target
-test: $(TEST_BIN)
-	@echo "Running tests..."
-	@./$(TEST_BIN)
+# Default target
+all: $(LIB_PATH)
 
-# Build test binary
-$(TEST_BIN): $(TEST_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+# Ensure build directory exists
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
-# Server build
-$(BIN_SERVER): $(OBJS_SERVER)
-	$(CC) $(CFLAGS) -o $@ $^
-
-# Subscriber build
-$(BIN_SUBSCRIBER_CLIENT): $(OBJS_SUBSCRIBER_CLIENT)
-	$(CC) $(CFLAGS) -o $@ $^
-
-# Publisher build
-$(BIN_PUBLISHER_CLIENT): $(OBJS_PUBLISHER_CLIENT)
-	$(CC) $(CFLAGS) -o $@ $^
-
-# Compile .c to .o
-$(SRC_DIR)/%.o: $(SRC_DIR)/%.c
+# Compile each source file manually
+$(BUILD_DIR)/mqtt_client_api.o: $(SRC_DIR)/mqtt_client_api.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/mqtt_parser.o: $(SRC_DIR)/mqtt_parser.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/mqtt_util.o: $(SRC_DIR)/mqtt_util.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Archive into static library
+$(LIB_PATH): $(OBJECTS)
+	$(AR) $(ARFLAGS) $@ $^
 
 # Clean
 clean:
-	rm -f $(SRC_DIR)/*.o $(BIN_SERVER) $(BIN_SUBSCRIBER_CLIENT) $(BIN_PUBLISHER_CLIENT) $(TEST_BIN)
+	rm -rf $(BUILD_DIR)
 
-.PHONY: all clean test
+.PHONY: all clean

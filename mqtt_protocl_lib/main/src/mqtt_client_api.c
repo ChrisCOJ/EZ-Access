@@ -1,3 +1,7 @@
+#include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
 #include "../include/mqtt_client_api.h"
 #include "../include/mqtt_parser.h"
 
@@ -86,8 +90,7 @@ int mqtt_client_subscribe_to_topic(subscribe_tuples subscription, uint16_t *pack
 }
 
 
-int mqtt_client_send_connect_packet(int sock) {
-    char *client_id = "Subscriber";
+int mqtt_client_send_connect_packet(int sock, char *client_id) {
     mqtt_connect conn = default_init_connect(client_id, strlen(client_id));
 
     packing_status status = pack_connect(&conn);

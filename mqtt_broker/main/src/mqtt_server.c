@@ -51,10 +51,37 @@ static pthread_mutex_t session_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t subscription_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
+int get_session_index_by_socket(int sock) {
+    pthread_mutex_lock(&session_list_lock);
+    for (int i = 0; i < session_list.size; ++i) {
+        session_state *session = ((session_state *)session_list.data) + i;
+        if (session->client_socket == sock) {
+            pthread_mutex_unlock(&session_list_lock);
+            return i;
+        }
+    }
+    pthread_mutex_unlock(&session_list_lock);
+    return -1;
+}
+
+
+void remove_client_session(int index) {
+    pthread_mutex_lock(&session_list_lock);
+    /* Free malloced memory */
+    session_state *client_session = ((session_state *)session_list.data) + index;
+    free_vec(&client_session->subscriptions);
+    free(client_session->client_id);
+    client_session = NULL;
+    /* Remove session from session list */
+    vec_remove(&session_list, index);
+    pthread_mutex_unlock(&session_list_lock);
+}
+
+
 bool is_client_subscribed(char *client_id, subscription_instance subscription) {
     for (int n = 0; n < (int)subscription.associated_clients.size; ++n) {
         session_state *client_n_session = ((session_state *)subscription.associated_clients.data) + n;
-        if (client_n_session->client_id == client_id) {
+        if (strcmp(client_n_session->client_id, client_id) == 0) {
             return true;
         }
     }
@@ -84,6 +111,7 @@ sub_match match_topic(char *topic_filter, session_state *current_client_session)
                     matched_subscription.is_client_subscribed = true;
                     pthread_mutex_unlock(&session_list_lock);
                 }
+                pthread_mutex_unlock(&session_list_lock);
                 // Early return if the topic filter has been matched
                 pthread_mutex_unlock(&subscription_list_lock);
                 return matched_subscription;
@@ -208,20 +236,21 @@ void mqtt_handle_publish(mqtt_publish pub, uint8_t pub_flags, session_state *cur
 }
 
 
-session_state mqtt_handle_connect(int client_socket, mqtt_connect connect) {
+session_state *mqtt_handle_connect(int client_socket, mqtt_connect connect) {
     /* Store session state for the current client */
     // Dynamic array of client subscriptions
     vector sub = { .item_size = sizeof(subscribe_tuples) };
-    session_state client_session = {
+    session_state *client_session = malloc(sizeof(session_state));
+    *client_session = (session_state){
         .client_socket = client_socket,
         .clean_session = (connect.connect_flags & CLEAN_SESSION_FLAG) == CLEAN_SESSION_FLAG,
         .subscriptions = sub,
         .unaknowledged_message_ids = NULL,
         .return_code = 0,
     };
-    client_session.client_id = strdup(connect.payload.client_id);
+    client_session->client_id = strdup(connect.payload.client_id);
     pthread_mutex_lock(&session_list_lock);
-    push(&session_list, &client_session);
+    push(&session_list, client_session);
     pthread_mutex_unlock(&session_list_lock);
 
     /* Pack and send connack */
@@ -236,14 +265,14 @@ session_state mqtt_handle_connect(int client_socket, mqtt_connect connect) {
     packing_status packed = pack_connack(connack);
     if (packed.return_code < 0) {
         printf("Packing connack failed with err code %d\n", packed.return_code);
-        client_session.return_code = -1;
+        client_session->return_code = -1;
         return client_session;
     }
 
     ssize_t bytes_written = send(client_socket, (uint8_t *)packed.buf, packed.buf_len, 0);
     if (bytes_written  == -1) {
         perror("Send failed!");
-        client_session.return_code = -1;
+        client_session->return_code = -1;
         return client_session;
     }
     return client_session;
@@ -254,7 +283,7 @@ void *process_client_messages(void *arg) {
     // client_socket is an integer file descriptor that represents a specific client/server socket connection.
     int client_socket = *(int *)arg;
     free(arg);
-    session_state client_session = {0};
+    session_state *client_session = NULL;
 
     // Set an initial appropriate client timeout before the keep alive parameter is set via the CONNECT packet
     struct timeval timeout;
@@ -303,14 +332,15 @@ void *process_client_messages(void *arg) {
                     printf("Client ID = %s\n", con.payload.client_id);
 
                     client_session = mqtt_handle_connect(client_socket, con);
-                    if (client_session.return_code < 0) {
+                    if (client_session->return_code < 0) {
+                        perror("Error occured during mqtt connect handshake!");
                         return NULL;  // Terminate client connection
                     }
                     break;
                 }
                 case MQTT_PUBLISH: {
                     mqtt_publish pub = packet.type.publish;
-                    mqtt_handle_publish(pub, packet.header.fixed_header & FLAG_MASK, &client_session);
+                    mqtt_handle_publish(pub, packet.header.fixed_header & FLAG_MASK, client_session);
                     break;
                 }
                 case MQTT_PUBACK: {
@@ -320,7 +350,7 @@ void *process_client_messages(void *arg) {
                 }
                 case MQTT_SUBSCRIBE: {
                     mqtt_subscribe sub = packet.type.subscribe;
-                    mqtt_handle_subscribe(sub, client_socket, &client_session);
+                    mqtt_handle_subscribe(sub, client_socket, client_session);
                     break;
                 }
                 case MQTT_UNSUBSCRIBE:{
@@ -341,6 +371,15 @@ void *process_client_messages(void *arg) {
         }
         else {
             connection_alive = false;
+            /* Remove session form session list */
+            printf("Cleanup\n");
+            int session_idx = get_session_index_by_socket(client_socket);
+            if (session_idx < 0) {
+                perror("Failed retrieving session index!");
+                return NULL;
+            }
+            remove_client_session(session_idx);
+            /* -------------------------------- */
             printf("Client connection terminated!\n");
         }
         free(original_buffer);

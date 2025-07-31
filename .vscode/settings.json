@@ -11,7 +11,8 @@
     "__split_buffer": "c",
     "vector": "c",
     "cstdint": "c",
-    "mqtt_protocol.h": "c"
+    "mqtt_protocol.h": "c",
+    "errno.h": "c"
   },
 
   "makefile.configureOnOpen": false,

@@ -150,6 +150,6 @@ int main() {
     }
     printf("Connected to MQTT server.\n");
 
-    mqtt_client_send_connect_packet(sock);
+    mqtt_client_send_connect_packet(sock, "Subscriber");
     process_server_messages(sock, &subscriptions);
 }

@@ -34,7 +34,18 @@ void push(vector *arr, void *item) {
     void *target_address = (uint8_t *)arr->data + arr->size * arr->item_size;
     // Copy item_size bytes from item to target_address
     memcpy(target_address, item, arr->item_size);
-    arr->size++;
+    ++arr->size;
+}
+
+
+void vec_remove(vector *vec, int index) {
+    if (index < 0 || index >= vec->size) return; // bounds check
+
+    void *target_address = (uint8_t *)vec->data + index * vec->item_size;
+    int shift_size = (vec->size - index - 1) * vec->item_size;
+    memmove(target_address, (uint8_t *)target_address + vec->item_size, shift_size);
+
+    --vec->size;
 }
 
 
