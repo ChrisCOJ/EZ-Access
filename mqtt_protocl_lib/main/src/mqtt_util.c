@@ -7,18 +7,6 @@
 #include "../include/mqtt_parser.h"
 
 
-int check(int status, const char* msg) {
-    /* Error checking function */
-    
-    if (status < 0) {
-        perror(msg);
-        exit(EXIT_FAILURE);
-        return -1;
-    }
-    return 0;
-}
-
-
 void push(vector *arr, void *item) {
     // Allocate enough size for the array
     if (arr->capacity == arr->size) {

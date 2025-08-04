@@ -183,7 +183,6 @@ void mqtt_handle_subscribe(mqtt_subscribe sub, int socket, session_state *curren
             pthread_mutex_unlock(&subscription_list_lock);
         }
     }
-
     // Pack and send suback with return codes for each attempted subscription
     packing_status packed = pack_suback(suback);
     if (packed.return_code < 0) {
@@ -206,7 +205,6 @@ void mqtt_handle_publish(mqtt_publish pub, uint8_t pub_flags, session_state *cur
         perror("Publish packet received correctly but the topic filter has not matched an existing subscription. Packet dropped...");
         return;
     }
-
     // If subscription exists, pack publish again without any changes
     packing_status packed_pub = pack_publish(&pub, pub_flags);
     if (packed_pub.return_code < 0) {
@@ -268,7 +266,6 @@ session_state *mqtt_handle_connect(int client_socket, mqtt_connect connect) {
         client_session->return_code = -1;
         return client_session;
     }
-
     ssize_t bytes_written = send(client_socket, (uint8_t *)packed.buf, packed.buf_len, 0);
     if (bytes_written  == -1) {
         perror("Send failed!");
@@ -308,7 +305,6 @@ void *process_client_messages(void *arg) {
         for (int i = 0; i < read_size; ++i) {
             printf("%02X\n", buffer[i]);
         }
-
         if (read_size > 0) {
             // Parse the message received from the client.
             int packet_type = unpack(&packet, &buffer, read_size);  // Reconstruct bytestream as mqtt_packet and store in packet
@@ -322,7 +318,6 @@ void *process_client_messages(void *arg) {
                 // drop_client(*(int *)client_socket);
                 exit(EXIT_FAILURE);
             }
-
             switch(packet_type) {
                 case MQTT_CONNECT: {
                     mqtt_connect con = packet.type.connect;

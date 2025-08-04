@@ -1,10 +1,13 @@
 #ifndef mqtt_protocol_h
 #define mqtt_protocol_h
 
-/* 
- ?MQTT Documentation:
- https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/errata01/os/mqtt-v3.1.1-errata01-os-complete.html#_Toc385349205 
-*/
+/**
+ * @file mqtt_protocol.h
+ * @brief Defines MQTT protocol constants, packet structures, and message formats for MQTT v3.1.1.
+ *
+ * MQTT Specification Reference:
+ * https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/errata01/os/mqtt-v3.1.1-errata01-os-complete.html
+ */
 
 #include <stdio.h>
 #include <stdint.h>
@@ -77,112 +80,133 @@
 #define USERNAME_FLAG           (1 << 7)
 
 
-/* 
- * Union detailing the structure of an mqtt header. The 'qos', 'dup', and 'retain' flags only apply to PUBLISH type messages.
- * From the LSB to MSB it goes:
- - Retain flag (1 bit)
- - QOS flag (2 bits)
- - Duplicate flag (1 bit)
- - Type of message (4 bits)
-*/
+
+/**
+ * @brief MQTT fixed header representation.
+ *
+ * - Retain flag (1 bit)  
+ * - QoS flag (2 bits)  
+ * - Duplicate flag (1 bit)  
+ * - Type of message (4 bits)  
+ *
+ * @note The `qos`, `dup`, and `retain` flags only apply to PUBLISH messages.
+ */
 typedef struct {
-    uint32_t remaining_length;
-    uint8_t fixed_header;
+    uint32_t remaining_length;                  /**< Remaining length of packet (variable header + payload). */
+    uint8_t fixed_header;                       /**< Fixed header byte containing packet type and flags. */
 } mqtt_header;
 
 
-/* 
- * Connect packet contains:
- - Fixed header.
- - Variable header that includes a protocol name length (4),
-   protocol name ('MQTT'), protocol level (4), connect flags, 
-   and 2 bytes of keep alive (MSB then LSB).
- - Payload
-*/
+/**
+ * @brief MQTT CONNECT packet structure.
+ */
 typedef struct {
-    // Variable Header
+    /** @brief Variable header fields. */
     struct {
-        uint16_t len;   // MSB then LSB
-        char *name;
+        uint16_t len;                           /**< Protocol name length (MSB then LSB). */
+        char *name;                             /**< Protocol name string ("MQTT"). */
     } protocol_name;
-    uint16_t keep_alive;    // Maximum acceptable time in seconds between the end of one control packet and the start of another
-    uint8_t protocol_level; // (4)
-    uint8_t connect_flags;
-    // Payload (Messages MUST appear in the order below from top to bottom!)
+
+    uint16_t keep_alive;                        /**< Keep alive time in seconds. */
+    uint8_t protocol_level;                     /**< MQTT protocol level (4 for v3.1.1). */
+    uint8_t connect_flags;                      /**< Connect flags bitfield (clean session, will, etc.). */
+
+    /** @brief Payload fields (appear in strict order). */
     struct {
-        char *client_id;
-        char *will_topic;
-        char *will_message;
-        uint16_t client_id_len;
-        uint16_t will_topic_len;
-        uint16_t will_message_len;
+        char *client_id;                        /**< Client identifier string. */
+        char *will_topic;                       /**< Will topic string (if will flag set). */
+        char *will_message;                     /**< Will message string (if will flag set). */
+        uint16_t client_id_len;                 /**< Length of client_id string. */
+        uint16_t will_topic_len;                /**< Length of will_topic string. */
+        uint16_t will_message_len;              /**< Length of will_message string. */
     } payload;
 } mqtt_connect;
 
 
+/**
+ * @brief MQTT CONNACK packet structure.
+ */
 typedef struct {
-    uint8_t session_present_flag;   // 1 = session present flag set, 0 = session present flag unset
-    uint8_t return_code;
+    uint8_t session_present_flag;               /**< 1 = session present, 0 = new session. */
+    uint8_t return_code;                        /**< Return code (0 = success, otherwise error). */
 } mqtt_connack;
 
 
+/**
+ * @brief Tuple representing a single topic and QoS in a SUBSCRIBE request.
+ */
 typedef struct {
-    char *topic;
-    uint16_t topic_len;
-    uint8_t qos;
-    uint8_t suback_status;
+    char *topic;                                /**< Topic filter string. */
+    uint8_t qos;                                /**< Requested QoS level for this subscription. */
+    uint16_t topic_len;                         /**< Length of topic string. */
+    uint8_t suback_status;                      /**< SUBACK return code after subscription. */
 } subscribe_tuples;
 
+/**
+ * @brief MQTT SUBSCRIBE packet structure.
+ */
 typedef struct {
-    uint16_t pkt_id;
-    uint16_t tuples_len;
-    subscribe_tuples *tuples;
+    uint16_t pkt_id;                            /**< Packet identifier for this SUBSCRIBE. */
+    uint16_t tuples_len;                        /**< Number of subscription tuples. */
+    subscribe_tuples *tuples;                   /**< Array of subscription tuples. */
 } mqtt_subscribe;
 
 
+/**
+ * @brief Tuple representing a single topic in an UNSUBSCRIBE request.
+ */
 typedef struct {
-    char *topic;
-    uint16_t topic_len;
+    char *topic;                                /**< Topic filter string. */
+    uint16_t topic_len;                         /**< Length of topic string. */
 } unsubscribe_tuples;
 
+/**
+ * @brief MQTT UNSUBSCRIBE packet structure.
+ */
 typedef struct {
-    uint16_t pkt_id;
-    uint16_t tuples_len;
-    unsubscribe_tuples *tuples;
+    uint16_t pkt_id;                            /**< Packet identifier for this UNSUBSCRIBE. */
+    uint16_t tuples_len;                        /**< Number of unsubscribe tuples. */
+    unsubscribe_tuples *tuples;                 /**< Array of unsubscribe tuples. */
 } mqtt_unsubscribe;
 
 
+/**
+ * @brief MQTT SUBACK packet structure.
+ */
 typedef struct {
-    uint16_t  pkt_id;
-    uint8_t *return_codes;
-    uint16_t rc_len;
+    uint16_t pkt_id;                            /**< Packet identifier of original SUBSCRIBE. */
+    uint8_t *return_codes;                      /**< Granted QoS levels for each topic or failure codes. */
+    uint16_t rc_len;                            /**< Length of return_codes array. */
 } mqtt_suback;
 
 
+
+/**
+ * @brief MQTT PUBLISH packet structure.
+ */
 typedef struct {
-    uint16_t pkt_id;
-    uint16_t topic_len;
-    uint32_t payload_len;
-    char *topic;
-    char *payload;
+    uint16_t pkt_id;                            /**< Packet identifier (QoS 1/2 only). */
+    uint16_t topic_len;                         /**< Length of topic string. */
+    uint32_t payload_len;                       /**< Length of payload data. */
+    char *topic;                                /**< Topic string. */
+    char *payload;                              /**< Payload message. */
 } mqtt_publish;
 
-
+/**
+ * @brief Generic MQTT ACK packet structure (PUBACK, UNSUBACK, etc.).
+ */
 typedef struct {
-    uint16_t pkt_id;
+    uint16_t pkt_id;                            /**< Packet identifier of acknowledged message. */
 } mqtt_ack;
 
-
-/* The rest of message types have the same structure as mqtt_ack or mqtt_header */
 typedef mqtt_ack mqtt_puback;
-// typedef mqtt_ack mqtt_pubrec;
-// typedef mqtt_ack mqtt_pubrel;
-// typedef mqtt_ack mqtt_pubcomp;
 typedef mqtt_ack mqtt_unsuback;
 
-
+/**
+ * @brief Generic MQTT packet structure containing header and variant payload types.
+ */
 typedef struct {
-    mqtt_header header;
+    mqtt_header header;                         /**< Fixed header for all MQTT packets. */
     union {
         mqtt_connect connect;
         mqtt_connack connack;
@@ -191,8 +215,7 @@ typedef struct {
         mqtt_subscribe subscribe;
         mqtt_suback suback;
         mqtt_unsubscribe unsubscribe;
-    } type;
+    } type; /**< Union of all possible packet types. */
 } mqtt_packet;
-
 
 #endif

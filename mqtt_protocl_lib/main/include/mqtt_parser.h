@@ -153,6 +153,12 @@ packing_status finalize_packet(packing_status status, size_t remaining_len, uint
  */
 packing_status pack_connect(mqtt_connect *conn);
 
+/**
+ * @brief Packs an MQTT CONNACK packet into a binary buffer.
+ *
+ * @param[in] connack The CONNACK packet structure containing connection acknowledgment flags and return code.
+ * @return packing_status struct containing the final packet buffer, its length, and error code (0 = success, otherwise failure).
+ */
 packing_status pack_connack(mqtt_connack connack);
 
 /**
@@ -165,7 +171,10 @@ packing_status pack_connack(mqtt_connack connack);
 packing_status pack_publish(mqtt_publish *pub, uint8_t flags);
 
 /**
- * 
+ * @brief Packs an MQTT PUBACK packet into a binary buffer.
+ *
+ * @param[in] puback The PUBACK packet structure containing the packet identifier.
+ * @return packing_status struct containing the final packet buffer, its length, and error code (0 = success, otherwise failure).
  */
 packing_status pack_puback(mqtt_puback puback);
 
@@ -178,7 +187,10 @@ packing_status pack_puback(mqtt_puback puback);
 packing_status pack_subscribe(mqtt_subscribe *sub);
 
 /**
- * 
+ * @brief Packs an MQTT SUBACK packet into a binary buffer.
+ *
+ * @param[in] suback The SUBACK packet structure containing granted QoS levels for each subscription request.
+ * @return packing_status struct containing the final packet buffer, its length, and error code (0 = success, otherwise failure).
  */
 packing_status pack_suback(mqtt_suback suback);
 
@@ -191,22 +203,25 @@ packing_status pack_suback(mqtt_suback suback);
 packing_status pack_unsubscribe(mqtt_subscribe *unsub);
 
 /**
- * 
- */
-packing_status pack_disconnect();
-
-/**
  * @brief Unpacks a CONNECT packet from the buffer into a mqtt_connect structure.
  *
  * @param[out] conn Pointer to the connect struct to fill.
  * @param[in,out] buf Pointer to the buffer pointer.
  * @param[in] buf_size Size of the buffer.
- * @param[in,out] accumulated_size Pointer to a counter tracking the total bytes read so far.
+ * @param[in,out] accumulated_size Total bytes already processed before this function.
  * @return MQTT_CONNECT on success, or an error code on failure.
  */
 int unpack_connect(mqtt_connect *conn, uint8_t **buf, size_t buf_size, int accumulated_size);
 
-
+/**
+ * @brief Unpacks a CONNACK packet from the buffer into a mqtt_connack structure.
+ *
+ * @param[out] connack Pointer to the CONNACK struct to fill.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @param[in] buf_size Size of the buffer.
+ * @param[in] accumulated_size Total bytes already processed before this function.
+ * @return MQTT_CONNACK on success, or an error code on failure.
+ */
 int unpack_connack(mqtt_connack *connack, uint8_t **buf, size_t buf_size, int accumulated_size);
 
 
@@ -217,7 +232,7 @@ int unpack_connack(mqtt_connack *connack, uint8_t **buf, size_t buf_size, int ac
  * @param[in] header The MQTT fixed header.
  * @param[in,out] buf Pointer to the buffer pointer.
  * @param[in] buf_size Size of the buffer.
- * @param[in,out] accumulated_size Pointer to a counter tracking the total bytes read so far.
+ * @param[in,out] accumulated_size Total bytes already processed before this function.
  * @return MQTT_PUBLISH on success, or an error code on failure.
  */
 int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, size_t buf_size, int accumulated_size);
@@ -228,13 +243,19 @@ int unpack_publish(mqtt_publish *publish, mqtt_header header, uint8_t **buf, siz
  * @param[out] subscribe Pointer to the subscribe struct to fill.
  * @param[in,out] buf Pointer to the buffer pointer.
  * @param[in] buf_size Size of the buffer.
- * @param[in,out] accumulated_size Pointer to a counter tracking the total bytes read so far.
+ * @param[in,out] accumulated_size Total bytes already processed before this function.
  * @return MQTT_SUBSCRIBE on success, or an error code on failure.
  */
 int unpack_subscribe(mqtt_subscribe *subscribe, uint8_t **buf, size_t buf_size, int accumulated_size);
 
 /**
- * 
+ * @brief Unpacks a SUBACK packet from the buffer into a mqtt_suback structure.
+ *
+ * @param[out] suback Pointer to the SUBACK struct to fill.
+ * @param[in,out] buf Pointer to the buffer pointer.
+ * @param[in] buf_size Size of the buffer.
+ * @param[in] accumulated_size Total bytes already processed before this function.
+ * @return MQTT_SUBACK on success, or an error code on failure.
  */
 int unpack_suback(mqtt_suback *suback, uint8_t **buf, size_t buf_size, int accumulated_size);
 
@@ -244,7 +265,7 @@ int unpack_suback(mqtt_suback *suback, uint8_t **buf, size_t buf_size, int accum
  * @param[out] unsubscribe Pointer to the unsubscribe struct to fill.
  * @param[in,out] buf Pointer to the buffer pointer.
  * @param[in] buf_size Size of the buffer.
- * @param[in,out] accumulated_size Pointer to a counter tracking the total bytes read so far.
+ * @param[in,out] accumulated_size Total bytes already processed before this function.
  * @return MQTT_UNSUBSCRIBE on success, or an error code on failure.
  */
 int unpack_unsubscribe(mqtt_unsubscribe *unsubscribe, uint8_t **buf, size_t buf_size, int accumulated_size);
@@ -294,7 +315,13 @@ void free_unsubscribe(mqtt_unsubscribe *unsub);
  */
 void free_packet(mqtt_packet *packet);
 
-
+/**
+ * @brief Initializes a default MQTT CONNECT packet with the provided client ID.
+ *
+ * @param[in] client_id      Client identifier string.
+ * @param[in] client_id_len  Length of the client identifier string.
+ * @return A mqtt_connect struct initialized with default parameters and the provided client ID.
+ */
 mqtt_connect default_init_connect(char *client_id, size_t client_id_len);
 
 #endif // mqtt_parser_h
