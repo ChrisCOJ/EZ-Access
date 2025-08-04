@@ -1,8 +1,9 @@
-**>EZ-Access – Lightweight MQTT Protocol & Broker Implementation<**
+# H1 >EZ-Access – Lightweight MQTT Protocol & Broker Implementation<
+
 EZ-Access is a minimal yet robust implementation of the MQTT 3.1.1 protocol, built entirely from scratch in C.
 It provides both the protocol library (packet parsing/packing) and a fully functional broker for lightweight message distribution, suitable for embedded devices or resource-constrained systems.
 
-**Features:**
+**🚀 Features:**
 - Implements core MQTT 3.1.1 packet types for QOS 0/1:
 - CONNECT, CONNACK
 - PUBLISH, PUBACK
@@ -14,7 +15,7 @@ It provides both the protocol library (packet parsing/packing) and a fully funct
 - Message routing based on topics (Wildcard matching to be added in future versions...)
 - Session state handling (clean session only, QoS 0/1)
 
-**Project Structure:**
+**📖 Project Structure:**
 ```text
 EZ-Access/
 │
@@ -29,13 +30,12 @@ EZ-Access/
 │   └── Makefile             # Builds and runs broker (links the mqtt library)
 ```
 
-
 **Requirements:**
 - Compiler: gcc or compatible C compiler
 - POSIX-compliant system (Linux, macOS; Windows via WSL or MinGW)
 - CMake / Make (for building)
 
-**Building:**
+**⚙️ Building:**
 1. *Build protocol library*
 ```text
 |------------------------|
@@ -54,7 +54,7 @@ EZ-Access/
 By default, the broker listens on port **1883**.
 You can connect using any MQTT client (e.g., mosquitto_pub, mosquitto_sub) or your custom publisher/subscriber implementations.
 
-**Planned roadmap:**
+**🗺️ Planned roadmap:**
 - Add support for wildcard matching of topic filters.
 - Add pingreq/pingresp and automatically disconnect clients after long periods of inactivity.
 - Implement clean-session, add retained messages.
