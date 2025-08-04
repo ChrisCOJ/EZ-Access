@@ -15,6 +15,7 @@ It provides both the protocol library (packet parsing/packing) and a fully funct
 - Session state handling (clean session only, QoS 0/1)
 
 **Project Structure:**
+```text
 EZ-Access/
 │
 ├── mqtt_protocol_lib/       # Protocol library
@@ -26,6 +27,7 @@ EZ-Access/
 │   ├── main/include/        # Broker headers
 │   ├── main/src/            # Broker source (mqtt_server.c, etc.)
 │   └── Makefile             # Builds and runs broker (links the mqtt library)
+```
 
 
 **Requirements:**
@@ -35,16 +37,20 @@ EZ-Access/
 
 **Building:**
 1. *Build protocol library*
+```text
 |------------------------|
 | > cd mqtt_protocol_lib |
 | > make                 |
 | > cd ..                |
 |________________________|
+```
 2. *Build and run broker:*
+```text
 |------------------|
 | > cd mqtt_broker |
 | > make run       |
 |__________________|
+```
 By default, the broker listens on port **1883**.
 You can connect using any MQTT client (e.g., mosquitto_pub, mosquitto_sub) or your custom publisher/subscriber implementations.
 
