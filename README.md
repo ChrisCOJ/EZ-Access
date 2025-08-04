@@ -1,4 +1,4 @@
-# H1 >EZ-Access – Lightweight MQTT Protocol & Broker Implementation<
+# EZ-Access – Lightweight MQTT Protocol & Broker Implementation
 
 EZ-Access is a minimal yet robust implementation of the MQTT 3.1.1 protocol, built entirely from scratch in C.
 It provides both the protocol library (packet parsing/packing) and a fully functional broker for lightweight message distribution, suitable for embedded devices or resource-constrained systems.
